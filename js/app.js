@@ -278,8 +278,13 @@ async function init() {
         localStorage.removeItem('bjUser'); // expired or old format
       } else {
         const fresh = users.find(u => u.username === parsed.username);
-        if (fresh) CU = { ...fresh };
-        else if (parsed.type) CU = { ...parsed };
+if (fresh) CU = { ...fresh };
+else if (parsed.type) CU = { ...parsed };
+// ✅ إضافة: لو ما لقينا المستخدم بالـ username، نجرب بالـ email
+else {
+  const byEmail = users.find(u => u.email === parsed.email || u.username === parsed.email);
+  if (byEmail) CU = { ...byEmail };
+}
       }
     }
   } catch(e) {}
@@ -305,20 +310,26 @@ async function init() {
  // ✅ الكود الصحيح - يستخدم الـ parsed مباشرة كـ fallback
 if (window.DASHBOARD_MODE) {
   const allowed = ['admin', 'sales_manager'];
-  // لو CU فارغ حاول تجيبه من localStorage مباشرة
+  
+  // ✅ لو CU لسه فارغ، خذه مباشرة من localStorage بدون تحقق من users
   if (!CU) {
     try {
       const raw = localStorage.getItem('bjUser');
       if (raw) {
-        const parsed = JSON.parse(raw);
-        if (parsed.type) CU = parsed;
+        const p = JSON.parse(raw);
+        const SESSION_12H = 12 * 60 * 60 * 1000;
+        if (p.type && p.loginTime && (Date.now() - p.loginTime) < SESSION_12H) {
+          CU = p;
+        }
       }
     } catch(e) {}
   }
+
   if (!CU || !allowed.includes(CU.type)) {
     window.location.href = 'index.html';
     return;
   }
+  try { showPage('pageDashboard'); } catch(e) {}
 }
 
   try { startRealtimeListeners(); } catch(e) { console.error('listeners error:', e); }
