@@ -308,10 +308,9 @@ else {
 
   // ─── حارس الداشبورد: يمنع غير الأدمن والمشرفين من الدخول ───
  // ✅ الكود الصحيح - يستخدم الـ parsed مباشرة كـ fallback
+// ─── حارس الداشبورد أولاً — قبل buildUI ───
 if (window.DASHBOARD_MODE) {
   const allowed = ['admin', 'sales_manager'];
-  
-  // ✅ لو CU لسه فارغ، خذه مباشرة من localStorage بدون تحقق من users
   if (!CU) {
     try {
       const raw = localStorage.getItem('bjUser');
@@ -324,13 +323,16 @@ if (window.DASHBOARD_MODE) {
       }
     } catch(e) {}
   }
-
   if (!CU || !allowed.includes(CU.type)) {
     window.location.href = 'index.html';
     return;
   }
-  try { showPage('pageDashboard'); } catch(e) {}
 }
+
+// buildUI بعد التحقق
+try { buildUI(); } catch(e) { console.error('buildUI error:', e); }
+
+// لا تكرر الحارس هنا
 
   try { startRealtimeListeners(); } catch(e) { console.error('listeners error:', e); }
   try { setupImportDragDrop(); } catch(e) {}
