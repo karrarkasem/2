@@ -611,24 +611,25 @@ function buildSidebar() {
         <span class="nav-icon">🏗️</span>إعداد النظام
       </a>`;
     }
+  } else if (CU?.type === 'admin' || CU?.type === 'sales_manager') {
+    // ─── أدمن/مشرف على الصفحة الرئيسية: لوحة التحكم فقط ───
+    const pendingOrders = orders.filter(o=>(o.status||'')==='pending_approval').length;
+    html = `
+      <a href="dashboard.html" class="nav-item" id="nav_pageDashboard" style="text-decoration:none;color:inherit">
+        <span class="nav-icon">🏠</span>لوحة التحكم
+        ${pendingOrders>0?`<span class="nav-badge" style="background:#f59e0b">${pendingOrders}</span>`:''}
+      </a>`;
+    if (typeof initThemePicker === 'function') {
+      setTimeout(initThemePicker, 0);
+    }
   } else {
     // ─── سايدبار كامل للمتجر العادي ───
     const nav=[
       {id:'pageStore',       icon:'🛍️', lbl:'المتجر',             always:true},
-      {id:'pageDashboard',   icon:'🏠',  lbl:'الإحصائيات',        perm:'dash'},
       {id:'pageOrders',      icon:'📦',  lbl:'الطلبات',            perm:'order', pendingApproval:true},
       {id:'pageWallet',      icon:'💰',  lbl:'المحفظة',            perm:'wallet'},
-      {id:'pageInventory',   icon:'📊',  lbl:'المخزون',            perm:'inv', section:'الإدارة'},
-      {id:'pageInvoices',    icon:'🧾',  lbl:'الفواتير',           perm:'inv'},
-      {id:'pageManage',      icon:'🛒',  lbl:'إدارة المنتجات',     perm:'manage'},
-      {id:'pageUsers',       icon:'👥',  lbl:'المستخدمون',         perm:'users'},
       {id:'pageOffers',      icon:'🎁',  lbl:'العروض',             always:true},
-      {id:'pageRepTracking', icon:'📍',  lbl:'تتبع المندوبين',     perm:'tracking'},
       {id:'pageNotifications',icon:'🔔', lbl:'الإشعارات',          perm:'notif', badge:true},
-      {id:'pageReports',     icon:'📈',  lbl:'التقارير',           perm:'reports'},
-      {id:'pagePointsMgmt', icon:'⭐', lbl:'إدارة النقاط', perm:'users'},
-      {id:'pageMarketing', icon:'📣', lbl:'التسويق', perm:'manage', extUrl:'marketing.html'},
-      {id:'pageDeliverySettings', icon:'🚚', lbl:'إعدادات التوصيل', perm:'delivery_cfg'},
     ];
     let lastSec='';
     nav.forEach(n=>{
@@ -644,11 +645,6 @@ function buildSidebar() {
         ${badgeVal>0?`<span class="nav-badge" style="${pendingCnt>0?'background:#f59e0b':''}">${badgeVal}</span>`:''}
       </div>`;
     });
-    if (CU?.type === 'admin' || CU?.role === 'admin') {
-      html += `<a href="setup.html" class="nav-item" style="text-decoration:none;color:inherit">
-        <span class="nav-icon">🏗️</span>إعداد النظام
-      </a>`;
-    }
     if (typeof initThemePicker === 'function') {
       setTimeout(initThemePicker, 0);
     }
