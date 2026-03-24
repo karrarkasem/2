@@ -298,8 +298,13 @@ else {
     setTimeout(() => {
       ls.style.display = 'none';
       if (!window.DASHBOARD_MODE) {
-        if (!buyerMode) showBuyerTypeScreen();
-        else updateModeBadge();
+        // الزوار بدون حساب → مودال الاختيار | المسجلون → وضع محفوظ أو مفرد افتراضي
+        if (!buyerMode) {
+          if (CU) { buyerMode = 'retail'; localStorage.setItem('bj_buyer_mode','retail'); updateModeBadge(); }
+          else showBuyerTypeScreen();
+        } else {
+          updateModeBadge();
+        }
       }
     }, 400);
   }, 900);
@@ -317,8 +322,11 @@ if (window.DASHBOARD_MODE) {
       if (raw) {
         const p = JSON.parse(raw);
         const SESSION_12H = 12 * 60 * 60 * 1000;
-        if (p.type && p.loginTime && (Date.now() - p.loginTime) < SESSION_12H) {
-          CU = p;
+        if (p.loginTime && (Date.now() - p.loginTime) < SESSION_12H) {
+          const resolvedType = p.type || p.accountType || '';
+          if (resolvedType) {
+            CU = { ...p, type: resolvedType };
+          }
         }
       }
     } catch(e) {}
@@ -668,9 +676,6 @@ function buildSidebar() {
         ${badgeVal>0?`<span class="nav-badge" style="${pendingCnt>0?'background:#f59e0b':''}">${badgeVal}</span>`:''}
       </div>`;
     });
-    if (typeof initThemePicker === 'function') {
-      setTimeout(initThemePicker, 0);
-    }
   }
 
   document.getElementById('sbNav').innerHTML=html;
@@ -798,8 +803,59 @@ function openAccountSettings() {
   // تحميل معرف تيليجرام
   const tgEl = document.getElementById('tg_id');
   if (tgEl) tgEl.value = CU?.telegram || '';
+
+  // ── وضع الشراء (للمستخدمين غير الإداريين) ──
+  const isAdminType = CU.type === 'admin' || CU.type === 'sales_manager';
+  let bmSection = document.getElementById('acBuyerModeSection');
+  if (!isAdminType) {
+    if (!bmSection) {
+      bmSection = document.createElement('div');
+      bmSection.id = 'acBuyerModeSection';
+      bmSection.style.cssText = 'margin-top:16px;padding:14px;background:rgba(13,148,136,.06);border-radius:14px;border:1px solid rgba(13,148,136,.14)';
+      bmSection.innerHTML = `
+        <div style="font-weight:800;font-size:.82rem;color:var(--deep);margin-bottom:10px">🛍️ وضع الشراء الافتراضي</div>
+        <div style="display:flex;gap:8px">
+          <button id="acBmRetail" onclick="setAccountBuyerMode('retail')"
+            style="flex:1;padding:10px;border-radius:10px;border:2px solid transparent;font-weight:700;font-size:.82rem;cursor:pointer;transition:.2s">
+            🛍️ مفرد
+          </button>
+          <button id="acBmWholesale" onclick="setAccountBuyerMode('wholesale')"
+            style="flex:1;padding:10px;border-radius:10px;border:2px solid transparent;font-weight:700;font-size:.82rem;cursor:pointer;transition:.2s">
+            📦 جملة
+          </button>
+        </div>`;
+      const modal = document.getElementById('accountModal');
+      const inner = modal?.querySelector('.m-inner') || modal?.querySelector('.modal-inner') || modal?.querySelector('.modal-body') || modal;
+      inner.appendChild(bmSection);
+    }
+    _updateBuyerModeButtons();
+  } else if (bmSection) {
+    bmSection.style.display = 'none';
+  }
+
   openModal('accountModal');
   closeSidebar();
+}
+
+function _updateBuyerModeButtons() {
+  const retBtn = document.getElementById('acBmRetail');
+  const wsBtn  = document.getElementById('acBmWholesale');
+  if (!retBtn || !wsBtn) return;
+  const isWS = buyerMode === 'wholesale';
+  retBtn.style.cssText = retBtn.style.cssText.replace(/background:[^;]+;?/g, '');
+  wsBtn.style.cssText  = wsBtn.style.cssText.replace(/background:[^;]+;?/g, '');
+  retBtn.style.background = !isWS ? 'var(--teal2)' : 'rgba(9,50,87,.07)';
+  retBtn.style.color      = !isWS ? 'white' : 'var(--deep)';
+  retBtn.style.borderColor= !isWS ? 'var(--teal2)' : 'rgba(9,50,87,.12)';
+  wsBtn.style.background  = isWS ? 'var(--teal)' : 'rgba(9,50,87,.07)';
+  wsBtn.style.color       = isWS ? 'white' : 'var(--deep)';
+  wsBtn.style.borderColor = isWS ? 'var(--teal)' : 'rgba(9,50,87,.12)';
+}
+
+function setAccountBuyerMode(mode) {
+  setBuyerMode(mode);
+  _updateBuyerModeButtons();
+  toast(mode === 'wholesale' ? '📦 تم تفعيل وضع الجملة' : '🛍️ تم تفعيل وضع المفرد');
 }
 
 function handleAvatarSelect(input) {
@@ -889,8 +945,13 @@ async function doLogin() {
   hideLogin(); buildUI();
   loadProtectedKeys();
   setTimeout(() => registerPush(), 1500);
-  const _loginTarget=(CU.type==='preparer')?'pagePrep':(CU.type==='driver')?'pageDriver':'pageDashboard';
-showPage(_loginTarget); toast('✅ مرحباً '+CU.name);
+  toast('✅ مرحباً '+CU.name);
+  if (CU.type === 'admin' || CU.type === 'sales_manager') {
+    setTimeout(() => { window.location.href = 'dashboard.html'; }, 400);
+    return;
+  }
+  const _loginTarget = (CU.type==='preparer') ? 'pagePrep' : (CU.type==='driver') ? 'pageDriver' : 'pageStore';
+  showPage(_loginTarget);
 }
 
 function doLogout(){
