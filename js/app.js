@@ -291,8 +291,10 @@ async function init() {
     ls.style.opacity = '0';
     setTimeout(() => {
       ls.style.display = 'none';
-      if (!buyerMode) showBuyerTypeScreen();
-      else updateModeBadge();
+      if (!window.DASHBOARD_MODE) {
+        if (!buyerMode) showBuyerTypeScreen();
+        else updateModeBadge();
+      }
     }, 400);
   }, 900);
 
@@ -619,9 +621,6 @@ function buildSidebar() {
         <span class="nav-icon">🏠</span>لوحة التحكم
         ${pendingOrders>0?`<span class="nav-badge" style="background:#f59e0b">${pendingOrders}</span>`:''}
       </a>`;
-    if (typeof initThemePicker === 'function') {
-      setTimeout(initThemePicker, 0);
-    }
   } else {
     // ─── سايدبار كامل للمتجر العادي ───
     const nav=[
@@ -5560,8 +5559,8 @@ buildSidebar = function() {
         <span class="nav-icon">🔔</span>الإشعارات
       </div>`;
     renderDriverDashboard();
-  } else if (CU && (CU.type === 'admin' || CU.type === 'sales_manager')) {
-    // Add performance reports nav if not exists
+  } else if (window.DASHBOARD_MODE && CU && (CU.type === 'admin' || CU.type === 'sales_manager')) {
+    // Add performance reports nav — داخل الداشبورد فقط
     if (!sbNav.querySelector('#nav_pagePerfReports')) {
       const div = document.createElement('div');
       div.className = 'nav-item';
