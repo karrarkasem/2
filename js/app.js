@@ -302,14 +302,24 @@ async function init() {
   try { buildUI(); } catch(e) { console.error('buildUI error:', e); }
 
   // ─── حارس الداشبورد: يمنع غير الأدمن والمشرفين من الدخول ───
-  if (window.DASHBOARD_MODE) {
-    const allowed = ['admin', 'sales_manager'];
-    if (!CU || !allowed.includes(CU.type)) {
-      window.location.href = 'index.html';
-      return;
-    }
-    try { showPage('pageDashboard'); } catch(e) {}
+ // ✅ الكود الصحيح - يستخدم الـ parsed مباشرة كـ fallback
+if (window.DASHBOARD_MODE) {
+  const allowed = ['admin', 'sales_manager'];
+  // لو CU فارغ حاول تجيبه من localStorage مباشرة
+  if (!CU) {
+    try {
+      const raw = localStorage.getItem('bjUser');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed.type) CU = parsed;
+      }
+    } catch(e) {}
   }
+  if (!CU || !allowed.includes(CU.type)) {
+    window.location.href = 'index.html';
+    return;
+  }
+}
 
   try { startRealtimeListeners(); } catch(e) { console.error('listeners error:', e); }
   try { setupImportDragDrop(); } catch(e) {}
@@ -840,7 +850,8 @@ async function doChangePassword() {
   CU.password = nw;
   const idx = users.findIndex(u => u._id === CU._id);
   if (idx !== -1) users[idx].password = nw;
-  try { const s = JSON.parse(localStorage.getItem('bjUser')||'{}'); if(s.username) localStorage.setItem('bjUser', JSON.stringify({username: CU.username, loginTime: s.loginTime || Date.now()})); } catch(e){}
+  try { const s = JSON.parse(localStorage.getItem('bjUser')||'{}'); if(s.username) localStorage.setItem('bjUser', JSON.stringify({
+  username: CU.username, type: CU.type, name: CU.name, loginTime: s.loginTime || Date.now()})); } catch(e){}
   ['cp_current','cp_new','cp_confirm'].forEach(id => document.getElementById(id).value = '');
   closeModal('accountModal');
   toast('تم تغيير كلمة المرور بنجاح');
