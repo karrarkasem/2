@@ -1,26 +1,27 @@
 // ════════════════════════════════════════════════════════
-// CONFIG.JS — ثوابت + مفاتيح API + صلاحيات الأدوار
+// CONFIG.JS — ثوابت + صلاحيات الأدوار
+// ملاحظة: مفاتيح API تُحمَّل من قاعدة البيانات عبر loadProtectedKeys()
 // ════════════════════════════════════════════════════════
 
 // ─── صورة بديلة للمنتجات (SVG محلي — بدون طلب شبكة) ───
 const NO_IMG = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Crect width='200' height='200' fill='%23f1f5f9'/%3E%3Crect x='65' y='68' width='70' height='64' rx='8' fill='%23e2e8f0'/%3E%3Crect x='55' y='61' width='90' height='20' rx='5' fill='%23cbd5e1'/%3E%3Cline x1='100' y1='81' x2='100' y2='132' stroke='%23d1d5db' stroke-width='2'/%3E%3C/svg%3E";
 
-// ─── EmailJS ───────────────────────────────────────────
-const EMAILJS_SERVICE_ID  = 'service_e1sj8tn';
-const EMAILJS_TEMPLATE_ID = 'template_2vxg15b';
-const EMAILJS_PUBLIC_KEY  = 'vXft7Q_VrPCL4VBQJ';
+// ─── EmailJS — تُملأ من قاعدة البيانات (محمية) ────────
+let EMAILJS_SERVICE_ID  = '';
+let EMAILJS_TEMPLATE_ID = '';
+let EMAILJS_PUBLIC_KEY  = '';
+
+// ─── الإيميلات المخوّلة بالوصول لمفاتيح API ───────────
 const ADMIN_EMAILS = [
   'sale.burjuman@gmail.com'
 ];
-(function(){
-  if(typeof emailjs !== 'undefined')
-    emailjs.init({ publicKey: EMAILJS_PUBLIC_KEY });
-})();
 
 // ─── إعدادات عامة ─────────────────────────────────────
-const WA  = '9647742222194';                              // واتساب الشركة
-const HQ  = [32.57664096812528, 44.05991539922393];       // إحداثيات المقر
-const IMGBB_API_KEY = 'a2173ed14e8a5d9288b6dbb4a56c8c78'; // مفتاح رفع الصور
+const WA  = '9647742222194';                        // واتساب الشركة (ليس سرياً)
+const HQ  = [32.57664096812528, 44.05991539922393]; // إحداثيات المقر
+
+// ─── مفتاح رفع الصور — يُملأ من قاعدة البيانات (محمي) ─
+let IMGBB_API_KEY = '';
 
 // ─── نظام النقاط ──────────────────────────────────────
 const POINTS_THRESHOLD = 100000; // نقطة واحدة لكل 100,000 د.ع
