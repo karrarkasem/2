@@ -279,6 +279,7 @@ async function init() {
       } else {
         const fresh = users.find(u => u.username === parsed.username);
         if (fresh) CU = { ...fresh };
+        else if (parsed.type) CU = { ...parsed };
       }
     }
   } catch(e) {}
@@ -859,7 +860,7 @@ async function doLogin() {
   const found=users.find(u=>u.username.toLowerCase()===un.toLowerCase()&&u.password===pw);
   if(!found){document.getElementById('loginErr').textContent='❌ بيانات دخول خاطئة';return;}
   CU={...found};
-  localStorage.setItem('bjUser', JSON.stringify({username: CU.username, loginTime: Date.now()}));
+  localStorage.setItem('bjUser', JSON.stringify({username: CU.username, type: CU.type, name: CU.name, loginTime: Date.now()}));
   if(found._id) fbUpdate('users',found._id,{lastLogin:new Date().toLocaleDateString('ar-IQ')}).catch(()=>{});
   hideLogin(); buildUI();
   loadProtectedKeys();
@@ -3928,7 +3929,7 @@ async function doGoogleLogin() {
     if (found) {
       // مستخدم موجود — حمّل بياناته
       CU = { ...found, photoURL: gUser.photoURL || found.photoURL || '' };
-      localStorage.setItem('bjUser', JSON.stringify({ username: CU.username, loginTime: Date.now(), googleUser: CU }));
+      localStorage.setItem('bjUser', JSON.stringify({ username: CU.username, type: CU.type, name: CU.name, loginTime: Date.now(), googleUser: CU }));
       hideLogin();
       buildUI();
       loadProtectedKeys();
@@ -4030,7 +4031,7 @@ async function saveProfileSetup() {
     CU = { ...userData, _id: newId, transactions: [] };
     users.push({ ...CU });
 
-    localStorage.setItem('bjUser', JSON.stringify({ username: CU.username, loginTime: Date.now(), googleUser: CU }));
+    localStorage.setItem('bjUser', JSON.stringify({ username: CU.username, type: CU.type, name: CU.name, loginTime: Date.now(), googleUser: CU }));
     closeModal('profileSetupModal');
     buildUI();
     showPage('pageStore');
@@ -4670,7 +4671,7 @@ async function regFinish() {
     CU = { ...userData, _id: newId };
     users.push({ ...CU });
 
-    localStorage.setItem('bjUser', JSON.stringify({ username: CU.username, loginTime: Date.now() }));
+    localStorage.setItem('bjUser', JSON.stringify({ username: CU.username, type: CU.type, name: CU.name, loginTime: Date.now() }));
 
     // Notify admin
     await fbAdd('notifications', {
