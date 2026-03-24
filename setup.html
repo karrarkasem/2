@@ -162,7 +162,7 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);min-h
       <p>تعديل معلومات المتجر، الإشعارات، ومفاتيح API</p>
     </div>
     <div class="header-back">
-      <a href="index.html" class="btn-back">🏬 المتجر</a>
+      <a href="dashboard.html" class="btn-back">🏠 الداشبورد</a>
     </div>
   </div>
 
@@ -1003,35 +1003,35 @@ async function saveSection(sec) {
         { key:'notif_wa_enabled',    value: chkVal('waEnabled') },
         { key:'notif_wa_number',     value: v('notifWa') },
         { key:'notif_tele_enabled',  value: chkVal('teleEnabled') },
-        { key:'telegram_token',      value: v('teleToken') },
-        { key:'telegram_chat',       value: v('teleChat') },
+        { key:'telegram_token',      value: v('teleToken') },      // غير محمي — مطلوب لإشعارات الطلبات
+        { key:'telegram_chat',       value: v('teleChat') },       // غير محمي
         { key:'notif_email_enabled', value: chkVal('emailEnabled') },
-        { key:'emailjs_service_id',  value: v('ejService') },
-        { key:'emailjs_template_id', value: v('ejTemplate') },
-        { key:'emailjs_public_key',  value: v('ejKey') },
+        { key:'emailjs_service_id',  value: v('ejService'),  protected: true },
+        { key:'emailjs_template_id', value: v('ejTemplate'), protected: true },
+        { key:'emailjs_public_key',  value: v('ejKey'),      protected: true },
         { key:'preparer_whatsapp',   value: v('notifWa') || v('whatsapp') },
       ];
     } else if (sec === 'api') {
       pairs = [
-        { key:'imgbb_key',        value: v('imgbbKey') },
-        { key:'google_maps_key',  value: v('mapsKey') },
-        { key:'fcm_server_key',   value: v('fcmKey') },
-        { key:'vapid_key',        value: v('vapidKey') },
-        { key:'custom_api1_name', value: v('custom1Name') },
-        { key:'custom_api1_value',value: v('custom1Val') },
-        { key:'custom_api2_name', value: v('custom2Name') },
-        { key:'custom_api2_value',value: v('custom2Val') },
-        { key:'fb_api_key',        value: v('fbApiKey') },
-        { key:'fb_auth_domain',    value: v('fbAuthDomain') },
-        { key:'fb_project_id',     value: v('fbProjectId') },
-        { key:'fb_storage_bucket', value: v('fbStorageBucket') },
-        { key:'fb_sender_id',      value: v('fbSenderId') },
-        { key:'fb_app_id',         value: v('fbAppId') },
+        { key:'imgbb_key',         value: v('imgbbKey'),       protected: true },
+        { key:'google_maps_key',   value: v('mapsKey'),        protected: true },
+        { key:'fcm_server_key',    value: v('fcmKey'),         protected: true },
+        { key:'vapid_key',         value: v('vapidKey'),       protected: true },
+        { key:'custom_api1_name',  value: v('custom1Name') },
+        { key:'custom_api1_value', value: v('custom1Val'),     protected: true },
+        { key:'custom_api2_name',  value: v('custom2Name') },
+        { key:'custom_api2_value', value: v('custom2Val'),     protected: true },
+        { key:'fb_api_key',         value: v('fbApiKey'),      protected: true },
+        { key:'fb_auth_domain',     value: v('fbAuthDomain'),  protected: true },
+        { key:'fb_project_id',      value: v('fbProjectId'),   protected: true },
+        { key:'fb_storage_bucket',  value: v('fbStorageBucket'), protected: true },
+        { key:'fb_sender_id',       value: v('fbSenderId'),    protected: true },
+        { key:'fb_app_id',          value: v('fbAppId'),       protected: true },
       ];
     } else if (sec === 'mobile') {
       pairs = [
         { key:'app_api_url',      value: v('appApiUrl') },
-        { key:'app_secret',       value: v('appSecret') },
+        { key:'app_secret',       value: v('appSecret'), protected: true },
         { key:'android_package',  value: v('androidPkg') },
         { key:'ios_bundle_id',    value: v('iosBundleId') },
         { key:'play_store_url',   value: v('playStoreUrl') },
