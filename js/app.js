@@ -18,13 +18,13 @@ async function loadAllSettings() {
   try {
     const snap = await fb().getDocs(fb().collection(db(), 'settings'));
     const s = {};
-    snap.docs.forEach(d => { const data = d.data(); if (data.key) s[data.key] = data.value; });
+    snap.docs.forEach(d => { const data = d.data(); if (data.key && !data.protected) s[data.key] = data.value; });
     window.COMPANY = s;
     _cacheSet('bj_company', s);
 
     // إعدادات المجهز
     preparerWhatsApp = s.preparer_whatsapp || '';
-    preparerTelegram = s.preparer_telegram || '-5246620507';
+    preparerTelegram = s.preparer_telegram || '';
 
     // عتبة النقاط — تُحدَّث إن وُجد العنصر في الصفحة
     if (s.pointsThreshold) {
@@ -70,6 +70,44 @@ async function loadAllSettings() {
 // الدوال القديمة أصبحت no-ops لتجنب أخطاء الاستدعاء من الكود الآخر
 async function loadPreparerSettings() {}
 async function loadCompanySettings() {}
+
+// ═══════════════════════════════════════════════════════
+// PROTECTED KEYS — تُحمَّل فقط للإيميل المخوَّل
+// ═══════════════════════════════════════════════════════
+async function loadProtectedKeys() {
+  if (!CU || !fbReady) return;
+
+  // الإيميل المخوَّل: محفوظ في الإعدادات أو الافتراضي من ADMIN_EMAILS
+  const authEmail = window.COMPANY?.keys_auth_email || ADMIN_EMAILS[0] || '';
+  const userEmail = (CU.email || '').toLowerCase().trim();
+
+  if (!authEmail || userEmail !== authEmail.toLowerCase().trim()) return;
+
+  try {
+    const snap = await fb().getDocs(
+      fb().query(fb().collection(db(), 'settings'), fb().where('protected', '==', true))
+    );
+    snap.docs.forEach(d => {
+      const data = d.data();
+      if (data.key) window.COMPANY[data.key] = data.value;
+    });
+
+    // ── تحديث متغيرات EmailJS ──
+    EMAILJS_SERVICE_ID  = window.COMPANY.emailjs_service_id  || '';
+    EMAILJS_TEMPLATE_ID = window.COMPANY.emailjs_template_id || '';
+    EMAILJS_PUBLIC_KEY  = window.COMPANY.emailjs_public_key  || '';
+    if (typeof emailjs !== 'undefined' && EMAILJS_PUBLIC_KEY) {
+      emailjs.init({ publicKey: EMAILJS_PUBLIC_KEY });
+    }
+
+    // ── تحديث مفتاح ImgBB ──
+    IMGBB_API_KEY = window.COMPANY.imgbb_key || '';
+
+    console.log('[🔐] المفاتيح المحمية مُحمَّلة بنجاح');
+  } catch(e) {
+    console.error('[🔐] خطأ في تحميل المفاتيح المحمية:', e);
+  }
+}
 
 // (push notifications → push.js | config → config.js)
 
@@ -244,6 +282,9 @@ async function init() {
       }
     }
   } catch(e) {}
+
+  // تحميل المفاتيح المحمية إذا كان المستخدم مخوَّلاً
+  await loadProtectedKeys();
 
   setTimeout(() => {
     const ls = document.getElementById('loadScreen');
@@ -549,49 +590,71 @@ function buildSidebar() {
   document.getElementById('sbWalletBar').style.display = (CU&&p.wallet)?'block':'none';
   updateWalletBar();
 
-  const nav=[
-    {id:'pageStore',       icon:'🛍️', lbl:'المتجر',             always:!window.DASHBOARD_MODE},
-    {id:'pageDashboard',   icon:'🏠',  lbl:'الإحصائيات',        perm:'dash'},
-    {id:'pageOrders',      icon:'📦',  lbl:'الطلبات',            perm:'order', pendingApproval:true},
-    {id:'pageWallet',      icon:'💰',  lbl:'المحفظة',            perm:'wallet'},
-    {id:'pageInventory',   icon:'📊',  lbl:'المخزون',            perm:'inv', section:'الإدارة'},
-    {id:'pageInvoices',    icon:'🧾',  lbl:'الفواتير',           perm:'inv'},
-    {id:'pageManage',      icon:'🛒',  lbl:'إدارة المنتجات',     perm:'manage'},
-    {id:'pageUsers',       icon:'👥',  lbl:'المستخدمون',         perm:'users'},
-    {id:'pageOffers',      icon:'🎁',  lbl:'العروض',             always:true},
-    {id:'pageRepTracking', icon:'📍',  lbl:'تتبع المندوبين',     perm:'tracking'},
-    {id:'pageNotifications',icon:'🔔', lbl:'الإشعارات',          perm:'notif', badge:true},
-    {id:'pageReports',     icon:'📈',  lbl:'التقارير',           perm:'reports'},
-    {id:'pagePointsMgmt', icon:'⭐', lbl:'إدارة النقاط', perm:'users'},
-    {id:'pageMarketing', icon:'📣', lbl:'التسويق', perm:'manage', extUrl:'marketing.html'},
-    {id:'pageDeliverySettings', icon:'🚚', lbl:'إعدادات التوصيل', perm:'delivery_cfg'},
-  ];
+  let html='';
 
-  let html='',lastSec='';
-  nav.forEach(n=>{
-    if(!n.always&&!p[n.perm]) return;
-    if(n.section&&n.section!==lastSec){html+=`<div class="sb-section">${n.section}</div>`;lastSec=n.section;}
-    const unread = n.badge ? notifications.filter(x=>!x.read&&(x.target==='all'||x.target===CU?.username)).length : 0;
-    const pendingCnt = (n.pendingApproval && (CU?.type==='admin'||CU?.type==='sales_manager'))
+  if (window.DASHBOARD_MODE) {
+    // ─── سايدبار مبسّط للداشبورد: لوحة التحكم + الإشعارات فقط ───
+    const unreadNotifs = notifications.filter(x=>!x.read&&(x.target==='all'||x.target===CU?.username)).length;
+    const pendingOrders = (CU?.type==='admin'||CU?.type==='sales_manager')
       ? orders.filter(o=>(o.status||'')==='pending_approval').length : 0;
-    const badgeVal = unread || pendingCnt;
-    const clickAct = n.extUrl ? `window.open('${n.extUrl}','_blank')` : `showPage('${n.id}')`;
-    html+=`<div class="nav-item" id="nav_${n.id}" onclick="${clickAct}">
-      <span class="nav-icon">${n.icon}</span>${n.lbl}
-      ${badgeVal>0?`<span class="nav-badge" style="${pendingCnt>0?'background:#f59e0b':''}">${badgeVal}</span>`:''}
-    </div>`;
-  });
-  // رابط إعداد النظام للأدمن فقط
-  if (CU?.type === 'admin' || CU?.role === 'admin') {
-    html += `<a href="setup.html" class="nav-item" style="text-decoration:none;color:inherit">
-      <span class="nav-icon">🏗️</span>إعداد النظام
-    </a>`;
+    html = `
+      <div class="nav-item" id="nav_pageDashboard" onclick="showPage('pageDashboard')">
+        <span class="nav-icon">🏠</span>لوحة التحكم
+        ${pendingOrders>0?`<span class="nav-badge" style="background:#f59e0b">${pendingOrders}</span>`:''}
+      </div>
+      <div class="nav-item" id="nav_pageNotifications" onclick="showPage('pageNotifications')">
+        <span class="nav-icon">🔔</span>الإشعارات
+        ${unreadNotifs>0?`<span class="nav-badge">${unreadNotifs}</span>`:''}
+      </div>`;
+    if (CU?.type === 'admin') {
+      html += `<a href="setup.html" class="nav-item" style="text-decoration:none;color:inherit">
+        <span class="nav-icon">🏗️</span>إعداد النظام
+      </a>`;
+    }
+  } else {
+    // ─── سايدبار كامل للمتجر العادي ───
+    const nav=[
+      {id:'pageStore',       icon:'🛍️', lbl:'المتجر',             always:true},
+      {id:'pageDashboard',   icon:'🏠',  lbl:'الإحصائيات',        perm:'dash'},
+      {id:'pageOrders',      icon:'📦',  lbl:'الطلبات',            perm:'order', pendingApproval:true},
+      {id:'pageWallet',      icon:'💰',  lbl:'المحفظة',            perm:'wallet'},
+      {id:'pageInventory',   icon:'📊',  lbl:'المخزون',            perm:'inv', section:'الإدارة'},
+      {id:'pageInvoices',    icon:'🧾',  lbl:'الفواتير',           perm:'inv'},
+      {id:'pageManage',      icon:'🛒',  lbl:'إدارة المنتجات',     perm:'manage'},
+      {id:'pageUsers',       icon:'👥',  lbl:'المستخدمون',         perm:'users'},
+      {id:'pageOffers',      icon:'🎁',  lbl:'العروض',             always:true},
+      {id:'pageRepTracking', icon:'📍',  lbl:'تتبع المندوبين',     perm:'tracking'},
+      {id:'pageNotifications',icon:'🔔', lbl:'الإشعارات',          perm:'notif', badge:true},
+      {id:'pageReports',     icon:'📈',  lbl:'التقارير',           perm:'reports'},
+      {id:'pagePointsMgmt', icon:'⭐', lbl:'إدارة النقاط', perm:'users'},
+      {id:'pageMarketing', icon:'📣', lbl:'التسويق', perm:'manage', extUrl:'marketing.html'},
+      {id:'pageDeliverySettings', icon:'🚚', lbl:'إعدادات التوصيل', perm:'delivery_cfg'},
+    ];
+    let lastSec='';
+    nav.forEach(n=>{
+      if(!n.always&&!p[n.perm]) return;
+      if(n.section&&n.section!==lastSec){html+=`<div class="sb-section">${n.section}</div>`;lastSec=n.section;}
+      const unread = n.badge ? notifications.filter(x=>!x.read&&(x.target==='all'||x.target===CU?.username)).length : 0;
+      const pendingCnt = (n.pendingApproval && (CU?.type==='admin'||CU?.type==='sales_manager'))
+        ? orders.filter(o=>(o.status||'')==='pending_approval').length : 0;
+      const badgeVal = unread || pendingCnt;
+      const clickAct = n.extUrl ? `window.open('${n.extUrl}','_blank')` : `showPage('${n.id}')`;
+      html+=`<div class="nav-item" id="nav_${n.id}" onclick="${clickAct}">
+        <span class="nav-icon">${n.icon}</span>${n.lbl}
+        ${badgeVal>0?`<span class="nav-badge" style="${pendingCnt>0?'background:#f59e0b':''}">${badgeVal}</span>`:''}
+      </div>`;
+    });
+    if (CU?.type === 'admin' || CU?.role === 'admin') {
+      html += `<a href="setup.html" class="nav-item" style="text-decoration:none;color:inherit">
+        <span class="nav-icon">🏗️</span>إعداد النظام
+      </a>`;
+    }
+    if (typeof initThemePicker === 'function') {
+      setTimeout(initThemePicker, 0);
+    }
   }
+
   document.getElementById('sbNav').innerHTML=html;
-  // تهيئة منتقي الثيم (يتم إضافته مرة واحدة فقط)
-  if (typeof initThemePicker === 'function') {
-    setTimeout(initThemePicker, 0);
-  }
   document.getElementById('sbLoginLogout').innerHTML=CU
     ?`<div class="nav-item" onclick="openAccountSettings()"><span class="nav-icon">⚙️</span>إعدادات الحساب</div>
       <div class="nav-item red" onclick="doLogout()"><span class="nav-icon">↩</span>تسجيل الخروج</div>`
@@ -804,6 +867,7 @@ async function doLogin() {
   localStorage.setItem('bjUser', JSON.stringify({username: CU.username, loginTime: Date.now()}));
   if(found._id) fbUpdate('users',found._id,{lastLogin:new Date().toLocaleDateString('ar-IQ')}).catch(()=>{});
   hideLogin(); buildUI();
+  loadProtectedKeys();
   setTimeout(() => registerPush(), 1500);
   const _loginTarget=(CU.type==='preparer')?'pagePrep':(CU.type==='driver')?'pageDriver':'pageDashboard';
 showPage(_loginTarget); toast('✅ مرحباً '+CU.name);
@@ -1504,6 +1568,44 @@ function buildDashboard(){
     <div class="kpi-card kpi-violet"><div class="kpi-icon">⭐</div><div class="kpi-val">${pts}</div><div class="kpi-lbl">النقاط المتراكمة</div></div>`;
   }
   document.getElementById('dashKpi').innerHTML=kpi;
+
+  // ─── بطاقات الإدارة (داشبورد فقط) ───
+  const mgmtEl = document.getElementById('dashMgmtTiles');
+  if (mgmtEl && window.DASHBOARD_MODE && (CU.type==='admin'||CU.type==='sales_manager')) {
+    const pendingCnt = orders.filter(o=>(o.status||'')==='pending_approval').length;
+    const tiles = [
+      { icon:'📦', lbl:'الطلبات',           sub: pendingCnt>0?`${pendingCnt} بانتظار الموافقة`:`${orders.length} طلب`,   page:'pageOrders',          color:'var(--teal)' },
+      { icon:'💰', lbl:'المحافظ',           sub:'رصيد وتحويلات',                                                           page:'pageWallet',          color:'var(--sky)' },
+      { icon:'⭐', lbl:'النقاط والمكافآت', sub:'إدارة نقاط المستخدمين',                                                   page:'pagePointsMgmt',      color:'var(--violet)' },
+      { icon:'📈', lbl:'التقارير',          sub:'إحصائيات الأداء',                                                         page:'pageReports',         color:'var(--teal2)' },
+      { icon:'👥', lbl:'المستخدمون',        sub:'إدارة الحسابات',                                                          page:'pageUsers',           color:'var(--sky2,#0ea5e9)' },
+      { icon:'🛒', lbl:'إدارة المنتجات',   sub:'إضافة وتعديل المنتجات',                                                   page:'pageManage',          color:'var(--mint)' },
+      { icon:'📊', lbl:'المخزون',           sub:`${products.filter(x=>x.stock>0&&x.stock<x.minStock).length} منتج منخفض`, page:'pageInventory',       color:'var(--gold)' },
+      { icon:'🚚', lbl:'إعدادات التوصيل',  sub:'مناطق ورسوم التوصيل',                                                     page:'pageDeliverySettings',color:'#6366f1' },
+      { icon:'📍', lbl:'تتبع المندوبين',   sub:'نشاط المندوبين',                                                          page:'pageRepTracking',     color:'#10b981' },
+      { icon:'📣', lbl:'التسويق',           sub:'حملات وقواعد بيانات',                                                     page:null, url:'marketing.html',    color:'#f59e0b' },
+      { icon:'⚙️', lbl:'إعدادات الموقع',   sub:'API، الإشعارات، التصميم',                                                 page:null, url:'setup.html',         color:'#6366f1' },
+      { icon:'🔔', lbl:'إعدادات الإشعارات',sub:'تيليغرام، واتساب، إيميل',                                                  page:null, url:'notif-settings.html',color:'#0ea5e9' },
+    ].filter(t => t.page ? !!document.getElementById(t.page) : true);
+
+    mgmtEl.innerHTML = `
+      <div style="font-size:.84rem;font-weight:800;color:rgba(9,50,87,.45);margin-bottom:12px;letter-spacing:.04em">⚡ الإدارة السريعة</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px">
+        ${tiles.map(t=>`
+          <div onclick="${t.url?`window.open('${t.url}','_blank')`:`showPage('${t.page}')`}"
+            style="background:var(--frost,#fff);border:1.5px solid rgba(0,0,0,.07);border-radius:16px;
+                   padding:16px 14px;cursor:pointer;transition:transform .15s,box-shadow .15s;
+                   display:flex;flex-direction:column;gap:6px"
+            onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 8px 24px rgba(0,0,0,.1)'"
+            onmouseout="this.style.transform='';this.style.boxShadow=''">
+            <div style="width:40px;height:40px;border-radius:12px;background:${t.color}22;
+                        display:flex;align-items:center;justify-content:center;font-size:1.3rem;margin-bottom:2px">${t.icon}</div>
+            <div style="font-size:.88rem;font-weight:800;color:var(--deep)">${t.lbl}</div>
+            <div style="font-size:.72rem;color:rgba(9,50,87,.45);font-weight:600">${t.sub}</div>
+          </div>`).join('')}
+      </div>`;
+  }
+
   const showOrds = (p.dash && CU.type!=='market_owner') ? orders : filterMyOrders();
   document.getElementById('recentBody').innerHTML=[...showOrds].slice(-8).reverse().map(o=>`
     <tr onclick="showOrdDetail('${o._id||o.id||''}')" style="cursor:pointer">
@@ -1915,7 +2017,7 @@ async function confirmApproveOrder() {
     _finalTgMsg = _approveTgMsg + _priceBlock;
   }
 
-  const TG_TOKEN = window.COMPANY?.telegram_token || '8142978736:AAEpT6L_RNNIUMx54mU83gx4ap_Z3VmuXsA';
+  const TG_TOKEN = window.COMPANY?.telegram_token || '';
   const TG_CHAT  = window.COMPANY?.telegram_chat  || '';
 
   // تشخيص: طباعة القيم في الكونسول
@@ -3834,6 +3936,7 @@ async function doGoogleLogin() {
       localStorage.setItem('bjUser', JSON.stringify({ username: CU.username, loginTime: Date.now(), googleUser: CU }));
       hideLogin();
       buildUI();
+      loadProtectedKeys();
       showPage(CU.type === 'market_owner' ? 'pageStore' : 'pageDashboard');
       toast('✅ أهلاً ' + (CU.name||'').split(' ')[0] + '! 👋');
     } else {
