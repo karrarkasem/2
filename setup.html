@@ -312,8 +312,16 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);min-h
             </div>
           </div>
           <div class="field">
-            <label>Chat ID</label>
+            <label>Chat ID (مجموعة الإدارة)</label>
             <input type="text" id="teleChat" placeholder="-100xxxxxxxxxx">
+          </div>
+          <div class="field">
+            <label>Chat ID مجموعة المجهزين</label>
+            <input type="text" id="telePrepChat" placeholder="-100xxxxxxxxxx">
+          </div>
+          <div class="field">
+            <label>Chat ID مجموعة السائقين</label>
+            <input type="text" id="teleDriverChat" placeholder="-100xxxxxxxxxx">
           </div>
         </div>
         <p style="font-size:.72rem;color:var(--muted2);margin-top:10px">
@@ -808,8 +816,10 @@ function populateFields(s) {
   if (s.notif_tele_enabled)  toggleBlock('tele',  true);
   if (s.notif_email_enabled) toggleBlock('email', true);
   set('notifWa',    s.notif_wa_number);
-  set('teleToken',  s.telegram_token);
-  set('teleChat',   s.telegram_chat);
+  set('teleToken',    s.telegram_token);
+  set('teleChat',     s.telegram_chat);
+  set('telePrepChat', s.preparer_telegram);
+  set('teleDriverChat', s.driver_telegram);
   set('ejService',  s.emailjs_service_id);
   set('ejTemplate', s.emailjs_template_id);
   set('ejKey',      s.emailjs_public_key);
@@ -1003,8 +1013,10 @@ async function saveSection(sec) {
         { key:'notif_wa_enabled',    value: chkVal('waEnabled') },
         { key:'notif_wa_number',     value: v('notifWa') },
         { key:'notif_tele_enabled',  value: chkVal('teleEnabled') },
-        { key:'telegram_token',      value: v('teleToken') },      // غير محمي — مطلوب لإشعارات الطلبات
-        { key:'telegram_chat',       value: v('teleChat') },       // غير محمي
+        { key:'telegram_token',      value: v('teleToken') },
+        { key:'telegram_chat',       value: v('teleChat') },
+        { key:'preparer_telegram',   value: v('telePrepChat') },
+        { key:'driver_telegram',     value: v('teleDriverChat') },
         { key:'notif_email_enabled', value: chkVal('emailEnabled') },
         { key:'emailjs_service_id',  value: v('ejService'),  protected: true },
         { key:'emailjs_template_id', value: v('ejTemplate'), protected: true },
@@ -1037,7 +1049,7 @@ async function saveSection(sec) {
         { key:'play_store_url',   value: v('playStoreUrl') },
         { key:'app_store_url',    value: v('appStoreUrl') },
         { key:'app_universal_url',value: v('appUniversalUrl') },
-        { key:'fcm_server_key',   value: v('fcmKeyMobile') },
+        { key:'fcm_server_key',   value: v('fcmKeyMobile'),  protected: true },
         { key:'fcm_topic',        value: v('fcmTopic') || 'all_users' },
       ];
     } else if (sec === 'system') {
