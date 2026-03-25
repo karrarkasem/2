@@ -152,6 +152,15 @@ body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);min-h
 </head>
 <body>
 
+<!-- شاشة التحقق من الصلاحية -->
+<div id="authGate" style="display:flex;align-items:center;justify-content:center;min-height:100vh;font-family:'Cairo',sans-serif;background:var(--bg,#f1f5f9)">
+  <div style="text-align:center;color:var(--muted,#64748b)">
+    <div style="font-size:2rem;margin-bottom:10px">🔐</div>
+    <div style="font-weight:700;font-size:.95rem">جاري التحقق من الصلاحية...</div>
+  </div>
+</div>
+
+<div id="mainWrap" style="display:none">
 <div class="wrap">
 
   <!-- Header -->
@@ -719,11 +728,14 @@ service cloud.firestore {
     </div>
   </div>
 </div>
+</div><!-- /mainWrap -->
 
 <!-- Firebase -->
 <script type="module">
 import { initializeApp, getApps } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import { getFirestore, collection, doc, getDocs, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+import { getFirestore, collection, doc, getDocs, setDoc, getDoc, query, where } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+
 const cfg = {
   apiKey:"AIzaSyBMLyYD0U5v3B3CWv80i-1mUGpBpkNKB98",
   authDomain:"burjuman-6cb83.firebaseapp.com",
@@ -735,21 +747,51 @@ const cfg = {
 const apps = getApps();
 const app  = apps.length ? apps[0] : initializeApp(cfg);
 const db   = getFirestore(app);
+const auth = getAuth(app);
 window._sdb = db;
 window._sfb = { doc, getDocs, setDoc, getDoc, collection };
 window._fbCfg = cfg;
 
-// تحميل الإعدادات فور جاهزية Firebase
-try {
-  const snap = await getDocs(collection(db, 'settings'));
-  const s = {};
-  snap.forEach(d => { s[d.data().key] = d.data().value; });
-  window._loadedSettings = s;
-  document.dispatchEvent(new Event('settingsLoaded'));
-} catch(e) {
-  console.warn('تعذّر تحميل الإعدادات:', e);
-  document.dispatchEvent(new Event('settingsLoaded'));
-}
+// ─── حماية الصفحة: أدمن فقط ───
+onAuthStateChanged(auth, async (user) => {
+  if (!user) {
+    // غير مسجل — أعد التوجيه
+    window.location.href = 'dashboard.html';
+    return;
+  }
+  try {
+    // تحقق من نوع المستخدم في Firestore
+    const uSnap = await getDocs(query(collection(db, 'users'), where('uid', '==', user.uid)));
+    let userType = null;
+    if (!uSnap.empty) userType = uSnap.docs[0].data().type;
+
+    if (userType !== 'admin') {
+      // ليس أدمن — أعد التوجيه
+      window.location.href = 'dashboard.html';
+      return;
+    }
+  } catch(e) {
+    console.warn('auth check error:', e);
+    window.location.href = 'dashboard.html';
+    return;
+  }
+
+  // ✅ مصرح له — أظهر الصفحة
+  document.getElementById('authGate').style.display = 'none';
+  document.getElementById('mainWrap').style.display = 'block';
+
+  // تحميل الإعدادات
+  try {
+    const snap = await getDocs(collection(db, 'settings'));
+    const s = {};
+    snap.forEach(d => { s[d.data().key] = d.data().value; });
+    window._loadedSettings = s;
+    document.dispatchEvent(new Event('settingsLoaded'));
+  } catch(e) {
+    console.warn('تعذّر تحميل الإعدادات:', e);
+    document.dispatchEvent(new Event('settingsLoaded'));
+  }
+});
 </script>
 
 <script>
