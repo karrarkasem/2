@@ -12,6 +12,7 @@
 // ═══════════════════════════════════════════════════════
 let preparerWhatsApp = '';
 let preparerTelegram = '';
+let driverTelegram   = '';
 window.COMPANY = {};
 
 async function loadAllSettings() {
@@ -22,9 +23,10 @@ async function loadAllSettings() {
     window.COMPANY = s;
     _cacheSet('bj_company', s);
 
-    // إعدادات المجهز
+    // إعدادات المجهز والسائق
     preparerWhatsApp = s.preparer_whatsapp || '';
     preparerTelegram = s.preparer_telegram || '';
+    driverTelegram   = s.driver_telegram   || '';
 
     // عتبة النقاط — تُحدَّث إن وُجد العنصر في الصفحة
     if (s.pointsThreshold) {
@@ -345,6 +347,36 @@ try { buildUI(); } catch(e) { console.error('buildUI error:', e); }
   try { startRealtimeListeners(); } catch(e) { console.error('listeners error:', e); }
   try { setupImportDragDrop(); } catch(e) {}
 
+  // ── معالجة رابط مباشر للطلب: ?order=ORD... ──
+  try { handleOrderUrlParam(); } catch(e) {}
+
+}
+
+// ─── فتح الطلب مباشرة إذا جاء من رابط تيليغرام ───────
+function handleOrderUrlParam() {
+  const _urlOrderId = new URLSearchParams(window.location.search).get('order');
+  if (!_urlOrderId) return;
+  // انتظر تحميل البيانات ثم افتح الطلب أو ورقة الموافقة
+  const _tryOpen = () => {
+    const _ord = orders.find(o => o.orderId === _urlOrderId || o._id === _urlOrderId);
+    if (!_ord) return;
+    const _isAdmin = CU && (CU.type === 'admin' || CU.type === 'sales_manager');
+    const _isPending = _ord.status === 'pending_approval' || _ord.status === 'Pending' || !_ord.status;
+    if (_isAdmin && _isPending) {
+      // فتح نافذة الموافقة مباشرة
+      if (typeof approveOrder === 'function') approveOrder(_ord._id);
+    } else {
+      // فتح تفاصيل الطلب
+      if (typeof showOrdDetail === 'function') showOrdDetail(_ord._id);
+    }
+    // تمييز الطلب في القائمة
+    setTimeout(() => {
+      const _row = document.querySelector(`[data-order-id="${_ord._id}"]`);
+      if (_row) { _row.style.outline = '2px solid var(--accent)'; _row.scrollIntoView({behavior:'smooth',block:'center'}); }
+    }, 600);
+  };
+  if (orders.length) { setTimeout(_tryOpen, 500); }
+  else { document.addEventListener('ordersLoaded', () => setTimeout(_tryOpen, 300), {once:true}); }
 }
 
 // ═══════════════════════════════════════════════════════
@@ -562,6 +594,7 @@ async function loadOrders() {
     );
     const snap = await fb().getDocs(q);
     orders = snap.docs.map(d => parseOrder({_id: d.id, ...d.data()}));
+    document.dispatchEvent(new Event('ordersLoaded'));
   } catch(e) { console.warn('loadOrders:', e); orders = []; }
 }
 
@@ -1501,12 +1534,14 @@ sendOrderEmail({shop, addr, note, prodList, total, commission, commPct, orderId,
   // إشعار تيليغرام — القيم من Firestore settings
   const TG_TOKEN = window.COMPANY?.telegram_token || '';
   const TG_CHAT  = window.COMPANY?.telegram_chat  || '';
-  const _newOrderTgText = `🛍️ *طلب جديد يحتاج موافقة*\n\n📅 ${nowStr}\n${CU?.name||'زائر'}\n🏪 ${shop}\n📍 ${addr}\n📦 ${prodList.join('، ')}\n💰 ${total.toLocaleString()} د.ع\nعمولة: ${commission.toLocaleString()} د.ع`;
+  const _adminApproveLink = `https://brjman.com/dashboard.html?order=${orderId}`;
+  const _newOrderTgText = `🛍️ *طلب جديد يحتاج موافقة*\n\n📅 ${nowStr}\n👤 ${CU?.name||'زائر'}\n🏪 ${shop}\n📍 ${addr}\n📦 ${prodList.join('، ')}\n💰 ${total.toLocaleString()} د.ع\nعمولة: ${commission.toLocaleString()} د.ع\n🆔 رقم الطلب: ${orderId}`;
+  const _adminTgMsg = _newOrderTgText + `\n\n🔗 *موافقة مباشرة:*\n${_adminApproveLink}`;
   if (TG_TOKEN && TG_CHAT) {
     fetch(`https://api.telegram.org/bot${TG_TOKEN}/sendMessage`, {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ chat_id: TG_CHAT, text: _newOrderTgText, parse_mode: 'Markdown' })
+      body: JSON.stringify({ chat_id: TG_CHAT, text: _adminTgMsg, parse_mode: 'Markdown' })
     }).catch(()=>{});
   }
   // إشعار فردي لكل مستخدم عنده معرف تيليجرام
@@ -1514,7 +1549,9 @@ sendOrderEmail({shop, addr, note, prodList, total, commission, commPct, orderId,
   if (TG_TOKEN) {
     users.filter(u => _notifyTypes.includes(u.type) && u.telegram).forEach(u => {
       const _isApprover = ['admin','sales_manager','supervisor'].includes(u.type);
-      const _personalMsg = _newOrderTgText + (_isApprover ? '\n\n✅ *افتح لوحة التحكم للموافقة على الطلب*' : '');
+      const _personalMsg = _isApprover
+        ? _newOrderTgText + `\n\n✅ *موافقة مباشرة:*\n${_adminApproveLink}`
+        : _newOrderTgText;
       fetch(`https://api.telegram.org/bot${TG_TOKEN}/sendMessage`, {
         method: 'POST',
         headers: {'Content-Type':'application/json'},
@@ -1843,7 +1880,7 @@ function renderOrders() {
           ? `<button class="btn btn-sm" style="background:var(--dark);color:white;border:none;box-shadow:var(--glow-dark)" onclick="approveOrder('${o._id||o.id||''}')">موافقة</button>`
           : '';
         return `
-        <tr onclick="showOrdDetail('${o._id||o.id||''}')" style="cursor:pointer${isPendingApproval?';background:rgba(245,158,11,.04)':''}">
+        <tr onclick="showOrdDetail('${o._id||o.id||''}')" data-order-id="${o._id||o.id||''}" style="cursor:pointer${isPendingApproval?';background:rgba(245,158,11,.04)':''}">
           <td style="white-space:nowrap;color:rgba(9,50,87,.55);font-size:.76rem">${o.date}</td>
           <td style="font-weight:700;color:var(--teal2)">${o.repName||'—'}</td>
           <td style="font-weight:700;color:var(--deep)">${o.shopName||'—'}</td>
@@ -5972,6 +6009,21 @@ async function submitReceipt() {
       }
     }
   }
+
+  // إشعار الأدمن بالتقييم
+  const _ratedOrder = orders.find(o => o._id === orderId);
+  const _stars = rating > 0 ? '⭐'.repeat(rating) : 'بدون تقييم';
+  const _adminRatingLink = `https://brjman.com/dashboard.html?order=${_ratedOrder?.orderId || orderId}`;
+  const _ratingMsg = `⭐ *تقييم جديد من الزبون*\n\n🏪 ${_ratedOrder?.shopName || '—'}\n🆔 ${_ratedOrder?.orderId || orderId}\n🚗 السائق: ${driverId || '—'}\n${_stars} (${rating}/5)\n${notes ? '📝 ' + notes + '\n' : ''}\n🔗 عرض الطلب:\n${_adminRatingLink}`;
+  const _TG = window.COMPANY?.telegram_token || '';
+  const _TC = window.COMPANY?.telegram_chat  || '';
+  if (_TG && _TC) {
+    fetch(`https://api.telegram.org/bot${_TG}/sendMessage`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ chat_id: _TC, text: _ratingMsg, parse_mode: 'Markdown' })
+    }).catch(()=>{});
+  }
+  sendFCMPushToAdmins('⭐ تقييم جديد', `${_ratedOrder?.shopName||'—'} — ${_stars}`).catch(()=>{});
 
   closeModal('receiptConfirmModal');
   toast('⭐ شكراً على تقييمك!');
