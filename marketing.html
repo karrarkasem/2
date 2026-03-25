@@ -284,7 +284,7 @@ tr:hover td{background:var(--surface2)}
 
 <!-- TOPBAR -->
 <div class="topbar">
-  <a href="index.html" class="tb-back" title="العودة للرئيسية">←</a>
+  <a href="dashboard.html" class="tb-back" title="العودة للداشبورد">←</a>
   <div class="tb-title">
     🎯 مركز التسويق
     <span>الإدارة الكاملة لحملاتك التسويقية</span>
@@ -654,7 +654,7 @@ const MKT_TEMPLATES = [
 /* ═══════════════════════════════════════════════════
    INIT
 ═══════════════════════════════════════════════════ */
-document.addEventListener('fbReady', async () => {
+async function initMarketing() {
   document.getElementById('connBadge').textContent = '🟢 متصل';
   document.getElementById('connBadge').style.color = 'var(--mint)';
   await loadData();
@@ -681,14 +681,14 @@ document.addEventListener('fbReady', async () => {
     });
     if (EMAILJS_KEY) emailjs.init(EMAILJS_KEY);
   } catch(e) {}
-});
+}
 
-// Fallback if fbReady already fired
-setTimeout(() => {
-  if (!users.length && window._fbReady) {
-    document.dispatchEvent(new Event('fbReady'));
-  }
-}, 2000);
+// تشغيل مباشر إذا Firebase جاهز، أو انتظار الحدث
+if (window._fbReady) {
+  initMarketing();
+} else {
+  document.addEventListener('fbReady', initMarketing, { once: true });
+}
 
 async function loadData() {
   const db = window._db;
