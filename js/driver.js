@@ -98,6 +98,10 @@ function _drvCardPrepared(o) {
   const prepTime = o.prepared_at
     ? `<span class="badge b-mint">🕐 ${new Date(o.prepared_at).toLocaleTimeString('ar-IQ',{hour:'2-digit',minute:'2-digit'})}</span>`
     : '';
+  const items = o.cartItemsArray || (o.products ? o.products.split('،').map(s => s.trim()).filter(Boolean) : []);
+  const itemsHtml = items.length
+    ? `<div class="drv-products" style="margin-bottom:8px">🛒 ${items.slice(0,5).map(i => typeof i === 'object' ? `${i.name} ×${i.qty}` : i).join(' — ')}${items.length > 5 ? ` (+${items.length-5})` : ''}</div>`
+    : (o.products ? `<div class="drv-products">${esc(o.products)}</div>` : '');
   return `
   <div class="driver-prepared-card">
     <div class="drv-card-hd">
@@ -105,7 +109,7 @@ function _drvCardPrepared(o) {
         <div class="drv-shop">🏪 ${esc(o.shopName || '—')}</div>
         <div class="drv-id">${esc(o.orderId || o._id)}</div>
       </div>
-      <span class="badge b-green" style="animation:pulse 2s infinite;white-space:nowrap">✅ جاهز للتحميل</span>
+      <span class="badge b-mint" style="animation:pulse 2s infinite;white-space:nowrap;font-weight:800">📦 جاهز للتحميل</span>
     </div>
     <div class="drv-meta">
       <span class="badge b-sky">💰 ${(parseFloat(o.total)||0).toLocaleString()} د.ع</span>
@@ -114,10 +118,10 @@ function _drvCardPrepared(o) {
       ${o.total_volume ? `<span class="badge b-teal">📐 ${parseFloat(o.total_volume).toFixed(2)} م³</span>` : ''}
     </div>
     ${o.shopAddress || o.shopAddr ? `<div class="drv-products">📍 ${esc(o.shopAddress || o.shopAddr)}</div>` : ''}
-    ${o.products ? `<div class="drv-products">🛒 ${esc(o.products)}</div>` : ''}
+    ${itemsHtml}
     <div class="drv-actions">
       ${o.location ? `<a href="${o.location}" target="_blank" class="btn btn-ghost btn-sm">🗺️ الموقع</a>` : ''}
-      <button class="btn btn-mint" style="flex:2" onclick="markAsLoaded('${o._id}')">🚗 تم التحميل — ابدأ التوصيل</button>
+      <button class="btn btn-mint" style="flex:2;font-weight:800" onclick="markAsLoaded('${o._id}')">🚗 تم التحميل — ابدأ التوصيل</button>
     </div>
   </div>`;
 }
@@ -161,9 +165,6 @@ function _drvCardDone(o) {
   const confirmBadge = confirmed
     ? `<span class="badge b-mint">✅ أكد الزبون الاستلام</span>`
     : `<span class="badge b-gold">⏳ انتظار تأكيد الزبون</span>`;
-  const stars = o.driver_rating
-    ? Array.from({length:5}, (_,i) => `<span style="color:${i<o.driver_rating?'#f59e0b':'#e2e8f0'};font-size:.85rem">★</span>`).join('')
-    : '';
   return `
   <div class="driver-done-card">
     <div class="drv-card-hd">
@@ -178,10 +179,8 @@ function _drvCardDone(o) {
     </div>
     <div class="drv-meta">
       <span class="badge b-sky">💰 ${(parseFloat(o.total)||0).toLocaleString()} د.ع</span>
-      ${stars ? `<span style="letter-spacing:1px">${stars}</span>` : ''}
       ${o.delivered_at ? `<span class="badge b-teal">🕐 ${new Date(o.delivered_at).toLocaleDateString('ar-IQ')}</span>` : ''}
     </div>
-    ${confirmed && o.customer_notes ? `<div class="drv-products">💬 ${esc(o.customer_notes)}</div>` : ''}
     ${o.proof_url ? `<a href="${o.proof_url}" target="_blank" class="btn btn-ghost btn-sm" style="pointer-events:auto">📷 إثبات التسليم</a>` : ''}
   </div>`;
 }
