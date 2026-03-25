@@ -386,6 +386,32 @@ let _ordersRenderTimer=null;
 function startRealtimeListeners() {
   if (!fbReady) return;
 
+  // ── المستخدمون: مستمع لحظي ──
+  fb().onSnapshot(fb().collection(db(), 'users'), snap => {
+    users = snap.docs.map(d => {
+      const u = {_id: d.id, ...d.data()};
+      return {
+        _id:      u._id,
+        name:     u.name||'',
+        username: u.username||u.email||'',
+        password: u.password||'',
+        type:     u.accountType||u.type||'rep',
+        phone:    u.phone||'',
+        email:    u.email||'',
+        telegram: u.telegram||'',
+        photoURL: u.photoURL||'',
+        commPct:  parseFloat(u.commPct)||0,
+        status:   u.status||'active',
+        balance:  parseFloat(u.balance)||0,
+        totalBuys:parseFloat(u.totalBuys)||0,
+        totalOrdersAmount: parseFloat(u.totalOrdersAmount)||0,
+        earnedPoints: parseInt(u.earnedPoints)||0,
+        transactions: u.transactions||[]
+      };
+    }).filter(u=>u._id);
+    renderUsersList(); renderPointsMgmt(); buildWalletPage();
+  }, () => {});
+
   // ── الطلبات: آخر 500 طلب فقط + منطق إشعارات تغيير الحالة ──
   fb().onSnapshot(
     fb().query(fb().collection(db(), 'orders'),
@@ -529,19 +555,21 @@ async function loadUsers() {
   users = raw.map(u => ({
     _id:      u._id,
     name:     u.name||'',
-    username: u.username||'',
+    username: u.username||u.email||'',
     password: u.password||'',
     type:     u.accountType||u.type||'rep',
     phone:    u.phone||'',
+    email:    u.email||'',
+    telegram: u.telegram||'',
+    photoURL: u.photoURL||'',
     commPct:  parseFloat(u.commPct)||0,
     status:   u.status||'active',
     balance:  parseFloat(u.balance)||0,
     totalBuys:parseFloat(u.totalBuys)||0,
-    // ✅ Points-related fields
     totalOrdersAmount: parseFloat(u.totalOrdersAmount)||0,
     earnedPoints: parseInt(u.earnedPoints)||0,
     transactions: u.transactions||[]
-  })).filter(u=>u.username);
+  })).filter(u=>u._id);
 }
 
 // ── Cache helpers ──
@@ -793,6 +821,23 @@ function showPage(id) {
   if(id==='pageNotifications')renderNotifications();
   if(id==='pageOffers')       renderOffers();
   if(id==='pageMarketing')    { renderMarketingKpi(); renderContacts(); renderVisitors(); buildMktTemplates(); updateMktAudience(); renderCampaignHistory(); }
+  // ── زر الرجوع للداشبورد في كل صفحة إدارية ──
+  const _isDashSubPage = window.DASHBOARD_MODE && id !== 'pageDashboard';
+  const _backTarget = window.DASHBOARD_MODE ? 'pageDashboard' : 'pageStore';
+  document.querySelectorAll('.page-back-btn').forEach(b => b.remove());
+  if (_isDashSubPage) {
+    const _activePg = document.getElementById(id);
+    const _ph = _activePg?.querySelector('.ph');
+    if (_ph) {
+      const _backBtn = document.createElement('button');
+      _backBtn.className = 'btn btn-ghost btn-sm page-back-btn';
+      _backBtn.style.cssText = 'display:inline-flex;align-items:center;gap:6px;margin-bottom:10px;font-size:.82rem;font-weight:700;color:var(--deep);border:1.5px solid rgba(9,50,87,.15);border-radius:10px;padding:6px 14px;background:rgba(9,50,87,.04)';
+      _backBtn.innerHTML = '← الرئيسية';
+      _backBtn.onclick = () => showPage(_backTarget);
+      _ph.insertAdjacentElement('beforebegin', _backBtn);
+    }
+  }
+
   window.scrollTo({top:0, behavior:'smooth'});
 }
 
@@ -2540,20 +2585,45 @@ function renderUsersList(){
     </div>`;
     return;
   }
-  el.innerHTML=users.map((u,i)=>`
-    <div class="user-item">
-      <div class="ui-av">${u.type==='admin'?'🛡️':u.type==='rep'?'🤝':u.type==='sales_manager'?'📊':'🏪'}</div>
-      <div class="ui-info">
-        <div class="ui-name">${u.name}</div>
-        <div class="ui-meta"><span>${ROLES[u.type]||u.type}</span><span>@${u.username}</span>${u.phone?`<span>📞 ${u.phone}</span>`:''}<span>عمولة: ${u.commPct}%</span>${(parseInt(u.earnedPoints)||0)>0?`<span>⭐ ${u.earnedPoints} نقطة</span>`:''}</div>
+  const roleColors = {admin:'#6366f1',sales_manager:'#0ea5e9',rep:'#10b981',market_owner:'#f59e0b',preparer:'#8b5cf6',driver:'#ef4444'};
+  const roleIcons  = {admin:'🛡️',sales_manager:'📊',rep:'🤝',market_owner:'🏪',preparer:'📦',driver:'🚗'};
+  el.innerHTML=`<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px">` + users.map((u,i)=>{
+    const col = roleColors[u.type]||'#64748b';
+    const icon = roleIcons[u.type]||'👤';
+    const pts = parseInt(u.earnedPoints)||0;
+    const bal = parseFloat(u.balance||0);
+    const initials = (u.name||'?').split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
+    return `<div style="background:var(--card-bg,#fff);border:1.5px solid rgba(0,0,0,.07);border-radius:16px;padding:18px 18px 14px;box-shadow:0 2px 12px rgba(0,0,0,.06);transition:box-shadow .2s;position:relative;overflow:hidden">
+      <div style="position:absolute;top:0;right:0;width:80px;height:80px;border-radius:0 16px 0 80px;background:${col}14;pointer-events:none"></div>
+      <div style="display:flex;align-items:flex-start;gap:13px;margin-bottom:14px">
+        <div style="width:48px;height:48px;border-radius:14px;background:${col}20;border:2px solid ${col}40;display:flex;align-items:center;justify-content:center;font-size:1.3rem;flex-shrink:0">
+          ${u.photoURL?`<img src="${u.photoURL}" style="width:100%;height:100%;object-fit:cover;border-radius:12px">`:`<span style="font-weight:800;font-size:.9rem;color:${col}">${initials}</span>`}
+        </div>
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:800;font-size:.95rem;color:var(--deep);margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${u.name||'—'}</div>
+          <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+            <span style="font-size:.72rem;font-weight:700;color:${col};background:${col}15;border:1px solid ${col}30;border-radius:20px;padding:2px 8px">${icon} ${ROLES[u.type]||u.type}</span>
+            ${u.username?`<span style="font-size:.72rem;color:rgba(9,50,87,.45);font-weight:600">@${u.username}</span>`:''}
+          </div>
+        </div>
+        <div style="text-align:left;flex-shrink:0">
+          <div style="font-size:1.05rem;font-weight:900;color:var(--deep)">${bal.toLocaleString()}</div>
+          <div style="font-size:.62rem;color:rgba(9,50,87,.4);font-weight:600;text-align:center">د.ع</div>
+        </div>
       </div>
-      <div class="ui-bal">${parseFloat(u.balance||0).toLocaleString()} <span style="font-size:.6rem;color:rgba(9,50,87,.33)">د.ع</span></div>
-      <div style="display:flex;gap:5px;flex-shrink:0">
-        <button class="btn btn-ghost btn-sm" onclick="openEditUser(${i})">تعديل</button>
-        <button class="btn btn-sky btn-sm" onclick="openPayForUser('${u.username}')">رصيد</button>
-        ${CU?.type==='admin'?`<button class="btn btn-sm" style="background:rgba(244,63,94,.09);color:#e11d48;border:1px solid rgba(244,63,94,.18)" onclick="deleteUser('${u._id}','${u.username}')">حذف</button>`:''}
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
+        ${u.phone?`<span style="font-size:.73rem;color:rgba(9,50,87,.55);background:rgba(9,50,87,.05);border-radius:8px;padding:3px 9px;font-weight:600">📞 ${u.phone}</span>`:''}
+        ${u.commPct>0?`<span style="font-size:.73rem;color:#10b981;background:rgba(16,185,129,.08);border-radius:8px;padding:3px 9px;font-weight:700">💰 ${u.commPct}%</span>`:''}
+        ${pts>0?`<span style="font-size:.73rem;color:#f59e0b;background:rgba(245,158,11,.09);border-radius:8px;padding:3px 9px;font-weight:700">⭐ ${pts} نقطة</span>`:''}
+        <span style="font-size:.73rem;font-weight:700;padding:3px 9px;border-radius:8px;${u.status==='active'?'color:#10b981;background:rgba(16,185,129,.08)':'color:#ef4444;background:rgba(239,68,68,.08)'}">${u.status==='active'?'● نشط':'○ موقوف'}</span>
       </div>
-    </div>`).join('');
+      <div style="display:flex;gap:7px;border-top:1px solid rgba(0,0,0,.06);padding-top:12px">
+        <button class="btn btn-ghost btn-sm" style="flex:1" onclick="openEditUser(${i})">✏️ تعديل</button>
+        <button class="btn btn-sky btn-sm" style="flex:1" onclick="openPayForUser('${u.username}')">💰 رصيد</button>
+        ${CU?.type==='admin'?`<button class="btn btn-sm" style="background:rgba(244,63,94,.07);color:#e11d48;border:1px solid rgba(244,63,94,.18);padding:6px 10px" onclick="deleteUser('${u._id}','${u.username}')">🗑️</button>`:''}
+      </div>
+    </div>`;
+  }).join('') + `</div>`;
 }
 
 async function deleteUser(fbid, username) {
