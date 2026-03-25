@@ -2201,17 +2201,25 @@ async function confirmApproveOrder() {
   if (TG_TOKEN && preparerTelegram) {
     const _o = orders.find(x => (x._id||x.id) === id);
     const _prepLink = `https://brjman.com/prepare.html?order=${_o?.orderId||id}`;
+    let _prepCredsBlock = '';
+    if (_approvePreparers.length) {
+      _prepCredsBlock = `\n━━━━━━━━━━━━━━━━━━\n🔐 *بيانات الدخول:*\n`;
+      _approvePreparers.forEach(p => {
+        _prepCredsBlock += `👤 ${p.name||p.username}: \`${p.username}\` / \`${p.password||'—'}\`\n`;
+      });
+    }
     const _groupMsg =
-      `📦 طلب جديد معتمد للتجهيز\n` +
+      `📦 *طلب جديد معتمد للتجهيز*\n` +
       `━━━━━━━━━━━━━━━━━━\n` +
       `🏪 المحل: ${_o?.shopName||'—'}\n` +
       `🆔 رقم الطلب: ${_o?.orderId||id}\n` +
       `💰 الإجمالي: ${(parseFloat(_o?.total)||0).toLocaleString()} د.ع\n` +
       `━━━━━━━━━━━━━━━━━━\n` +
-      `🔗 رابط التجهيز:\n${_prepLink}`;
+      `🔗 رابط التجهيز:\n${_prepLink}` +
+      _prepCredsBlock;
     fetch(`https://api.telegram.org/bot${TG_TOKEN}/sendMessage`, {
       method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ chat_id: preparerTelegram, text: _groupMsg })
+      body: JSON.stringify({ chat_id: preparerTelegram, text: _groupMsg, parse_mode: 'Markdown' })
     })
     .then(r => r.json())
     .then(data => {
@@ -2247,9 +2255,22 @@ async function confirmApproveOrder() {
 
     // إرسال لتليجرام المجهز الفردي (إن كان مختلفاً عن القناة العامة)
     if (TG_TOKEN && prep.telegram && prep.telegram !== preparerTelegram) {
+      const _prepLinkIndiv = `https://brjman.com/prepare.html?order=${o?.orderId||id}`;
+      const _prepPersonalMsg =
+        `📦 *طلب جديد معتمد للتجهيز*\n` +
+        `━━━━━━━━━━━━━━━━━━\n` +
+        `🏪 المحل: ${o?.shopName||'—'}\n` +
+        `🆔 رقم الطلب: ${o?.orderId||id}\n` +
+        `💰 الإجمالي: ${(parseFloat(o?.total)||0).toLocaleString()} د.ع\n` +
+        `━━━━━━━━━━━━━━━━━━\n` +
+        `🔐 *بيانات دخولك:*\n` +
+        `👤 المستخدم: \`${prep.username}\`\n` +
+        `🔑 كلمة المرور: \`${prep.password||'—'}\`\n` +
+        `━━━━━━━━━━━━━━━━━━\n` +
+        `🔗 رابط التجهيز:\n${_prepLinkIndiv}`;
       fetch(`https://api.telegram.org/bot${TG_TOKEN}/sendMessage`, {
         method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ chat_id: prep.telegram, text: _finalTgMsg, parse_mode: 'Markdown' })
+        body: JSON.stringify({ chat_id: prep.telegram, text: _prepPersonalMsg, parse_mode: 'Markdown' })
       }).catch(() => {});
     }
   });
@@ -6091,20 +6112,29 @@ async function submitReceipt() {
     }
   }
 
-  // إشعار الأدمن بالتقييم
+  // إشعار الأدمن بتأكيد الاستلام والتقييم
   const _ratedOrder = orders.find(o => o._id === orderId);
   const _stars = rating > 0 ? '⭐'.repeat(rating) : 'بدون تقييم';
   const _adminRatingLink = `https://brjman.com/dashboard.html?order=${_ratedOrder?.orderId || orderId}`;
-  const _ratingMsg = `⭐ *تقييم جديد من الزبون*\n\n🏪 ${_ratedOrder?.shopName || '—'}\n🆔 ${_ratedOrder?.orderId || orderId}\n🚗 السائق: ${driverId || '—'}\n${_stars} (${rating}/5)\n${notes ? '📝 ' + notes + '\n' : ''}\n🔗 عرض الطلب:\n${_adminRatingLink}`;
+  const _receiptMsg =
+    `✅ *الزبون استلم طلبه*\n` +
+    `━━━━━━━━━━━━━━━━━━\n` +
+    `🏪 المحل: ${_ratedOrder?.shopName || '—'}\n` +
+    `🆔 رقم الطلب: ${_ratedOrder?.orderId || orderId}\n` +
+    `🚗 السائق: ${_ratedOrder?.driver_name || driverId || '—'}\n` +
+    `⭐ التقييم: ${_stars} (${rating}/5)\n` +
+    (notes ? `📝 ملاحظة الزبون: ${notes}\n` : '') +
+    `━━━━━━━━━━━━━━━━━━\n` +
+    `🔗 عرض الطلب:\n${_adminRatingLink}`;
   const _TG = window.COMPANY?.telegram_token || '';
   const _TC = window.COMPANY?.telegram_chat  || '';
   if (_TG && _TC) {
     fetch(`https://api.telegram.org/bot${_TG}/sendMessage`, {
       method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ chat_id: _TC, text: _ratingMsg, parse_mode: 'Markdown' })
+      body: JSON.stringify({ chat_id: _TC, text: _receiptMsg, parse_mode: 'Markdown' })
     }).catch(()=>{});
   }
-  sendFCMPushToAdmins('⭐ تقييم جديد', `${_ratedOrder?.shopName||'—'} — ${_stars}`).catch(()=>{});
+  sendFCMPushToAdmins('✅ الزبون استلم طلبه', `${_ratedOrder?.shopName||'—'} — ${_stars}`).catch(()=>{});
 
   closeModal('receiptConfirmModal');
   toast('⭐ شكراً على تقييمك!');
