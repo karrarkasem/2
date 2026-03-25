@@ -1,343 +1,305 @@
 // ════════════════════════════════════════════════════════
-// DRIVER.JS — لوحة تحكم السائق
-// يعتمد على المتغيرات العامة: orders, CU
+// PREPARER.JS — لوحة تحكم المجهز
+// يعتمد على المتغيرات العامة: orders, products, CU, fbReady
 // والدوال: fbUpdate, fbAdd, toast, openModal, closeModal,
 //          browserNotif, notifyCustomer, sendFCMPushToAdmins,
-//          tsToStr, IMGBB_API_KEY
+//          parseCartItems, tsToStr, esc
 // ════════════════════════════════════════════════════════
 
-// ─── عرض لوحة السائق ──────────────────────────────────
-async function renderDriverDashboard() {
-  const listEl = document.getElementById('driverOrdersList');
-  const kpiEl  = document.getElementById('driverKpi');
+// ─── مستمعات real-time للمجهز والسائق ────────────────
+let _prepSnapshot = null, _driverSnapshot = null;
+
+function startNewRoleListeners() {
+  if (!fbReady || !CU) return;
+
+  if (CU.type === 'preparer' && !_prepSnapshot) {
+    _prepSnapshot = fb().onSnapshot(
+      fb().query(fb().collection(db(), 'orders'),
+        fb().where('status', 'in', ['Pending', 'Confirmed', 'pending', 'confirmed'])),
+      snap => {
+        renderPrepDashboard();
+        snap.docChanges().forEach(change => {
+          if (change.type === 'added') {
+            const o = change.doc.data();
+            browserNotif('📦 طلب جديد للتجهيز', `${o.shopName || ''} — ${(o.total || 0).toLocaleString()} د.ع`);
+            fbAdd('notifications', {
+              title: '📦 طلب جديد للتجهيز',
+              body: `${o.shopName || ''} — ${(o.total || 0).toLocaleString()} د.ع`,
+              type: 'order', read: false, targetUser: CU.username,
+              date: new Date().toLocaleDateString('ar-IQ')
+            }).catch(() => {});
+          }
+        });
+      }
+    );
+  }
+
+  if (CU.type === 'driver' && !_driverSnapshot) {
+    _driverSnapshot = fb().onSnapshot(
+      fb().query(fb().collection(db(), 'orders'), fb().where('status', '==', 'Prepared')),
+      snap => {
+        renderDriverDashboard();
+        snap.docChanges().forEach(change => {
+          if (change.type === 'added') {
+            const o = change.doc.data();
+            browserNotif('🚗 طلب جاهز للتوصيل', `${o.shopName || ''}`);
+            fbAdd('notifications', {
+              title: '🚗 طلب جاهز للتوصيل',
+              body: `طلب ${o.shopName || ''} جاهز للتحميل`,
+              type: 'order', read: false, targetUser: CU.username,
+              date: new Date().toLocaleDateString('ar-IQ')
+            }).catch(() => {});
+          }
+        });
+      }
+    );
+  }
+}
+
+// ─── حساب الحجم والوزن لطلب معين ─────────────────────
+function calcOrderVolumeWeight(order) {
+  let totalVol = 0, totalWgt = 0;
+  const items = order.cartItemsArray || parseCartItems(order.products);
+  items.forEach(item => {
+    const prod = products.find(p => p.name === item.name);
+    if (prod) {
+      totalVol += (prod.carton_volume || 0) * (item.qty || 1);
+      totalWgt += (prod.carton_weight || 0) * (item.qty || 1);
+    }
+  });
+  return { vol: totalVol.toFixed(3), wgt: totalWgt.toFixed(2) };
+}
+
+// ─── عرض لوحة المجهز ──────────────────────────────────
+async function renderPrepDashboard() {
+  const listEl = document.getElementById('prepOrdersList');
+  const kpiEl  = document.getElementById('prepKpi');
   if (!listEl || !kpiEl) return;
 
-  const preparedOrders   = orders.filter(o => o.status === 'Prepared');
-  const inDeliveryOrders = orders.filter(o =>
-    (o.status === 'In Delivery' || o.status === 'NearCustomer') && o.driver_id === CU.username
-  );
-  const myDelivered = orders.filter(o => o.status === 'Delivered' && o.driver_id === CU.username)
-    .sort((a, b) => new Date(b.delivered_at || 0) - new Date(a.delivered_at || 0))
-    .slice(0, 20);
-  const ratedDeliveries = myDelivered.filter(o => o.driver_rating);
-  const avgRating = ratedDeliveries.length
-    ? ratedDeliveries.reduce((s, o) => s + o.driver_rating, 0) / ratedDeliveries.length
-    : 0;
+  const prepOrders = orders.filter(o => {
+    const st = (o.status || 'pending').toLowerCase();
+    return ['pending', 'confirmed'].includes(st);
+  });
 
-  // ─── KPI Cards ───
+  const totalVol = prepOrders.reduce((s, o) => { const {vol} = calcOrderVolumeWeight(o); return s + parseFloat(vol); }, 0);
+  const totalWgt = prepOrders.reduce((s, o) => { const {wgt} = calcOrderVolumeWeight(o); return s + parseFloat(wgt); }, 0);
+
   kpiEl.innerHTML = `
-    <div class="kpi-card kpi-mint">
-      <div class="kpi-icon">📦</div>
-      <div class="kpi-val">${preparedOrders.length}</div>
-      <div class="kpi-lbl">جاهزة للتحميل</div>
-    </div>
-    <div class="kpi-card kpi-teal">
-      <div class="kpi-icon">🚗</div>
-      <div class="kpi-val">${inDeliveryOrders.length}</div>
-      <div class="kpi-lbl">قيد التوصيل</div>
-    </div>
-    <div class="kpi-card kpi-sky">
-      <div class="kpi-icon">✅</div>
-      <div class="kpi-val">${myDelivered.length}</div>
-      <div class="kpi-lbl">تم تسليمها</div>
-    </div>
-    <div class="kpi-card kpi-gold">
-      <div class="kpi-icon">⭐</div>
-      <div class="kpi-val">${avgRating ? avgRating.toFixed(1) : '—'}</div>
-      <div class="kpi-lbl">متوسط التقييم</div>
-    </div>`;
+    <div class="kpi-card kpi-sky"><div class="kpi-icon">مخزون</div><div class="kpi-val">${prepOrders.length}</div><div class="kpi-lbl">طلبات للتجهيز</div></div>
+    <div class="kpi-card kpi-teal"><div class="kpi-icon">📐</div><div class="kpi-val">${totalVol.toFixed(2)}</div><div class="kpi-lbl">إجمالي الحجم (م³)</div></div>
+    <div class="kpi-card kpi-mint"><div class="kpi-icon">⚖️</div><div class="kpi-val">${totalWgt.toFixed(1)}</div><div class="kpi-lbl">إجمالي الوزن (كغ)</div></div>`;
 
-  if (!preparedOrders.length && !inDeliveryOrders.length && !myDelivered.length) {
-    listEl.innerHTML = `
-      <div style="text-align:center;padding:55px 20px;color:rgba(9,50,87,.35)">
-        <div style="font-size:3rem;margin-bottom:12px">🚗</div>
-        <div style="font-weight:700;font-size:.95rem">لا توجد طلبات حالياً</div>
-        <div style="font-size:.8rem;margin-top:6px;opacity:.7">ستظهر الطلبات الجاهزة هنا</div>
-      </div>`;
+  if (!prepOrders.length) {
+    listEl.innerHTML = '<div style="text-align:center;padding:55px;color:rgba(9,50,87,.35)"><div style="font-size:2.5rem;margin-bottom:10px">✅</div><p>لا توجد طلبات للتجهيز حالياً</p></div>';
     return;
   }
 
-  // ─── القسم 1: جاهزة للتحميل (مميزة بالإطار النابض) ───
-  let readyHtml = '';
-  if (preparedOrders.length) {
-    readyHtml = `
-      <div class="driver-section-hdr ready">
-        📦 جاهزة للتحميل
-        <span class="ds-count">${preparedOrders.length}</span>
+  listEl.innerHTML = prepOrders.map(o => {
+    const { vol, wgt } = calcOrderVolumeWeight(o);
+    const items = o.cartItemsArray || parseCartItems(o.products);
+    const isConfirmed = (o.status || '').toLowerCase() === 'confirmed';
+    const statusBadge = isConfirmed
+      ? '<span class="badge b-mint">✅ مؤكد</span>'
+      : '<span class="badge b-gold">⏳ معلق</span>';
+    const accentColor = isConfirmed ? '#10b981' : '#f59e0b';
+    return `
+    <div class="prep-order-card" style="border-right:4px solid ${accentColor}">
+      <div class="prep-order-hd">
+        <div>
+          <div class="prep-order-shop">🏪 ${o.shopName || '—'}</div>
+          <div class="prep-order-id">${o.orderId || o._id}</div>
+        </div>
+        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+          ${statusBadge}
+        </div>
       </div>
-      ${preparedOrders.map(o => _drvCardPrepared(o)).join('')}`;
-  }
-
-  // ─── القسم 2: قيد التوصيل ───
-  let onRoadHtml = '';
-  if (inDeliveryOrders.length) {
-    onRoadHtml = `
-      <div class="driver-section-hdr onroad" style="margin-top:${preparedOrders.length ? '18px' : '0'}">
-        🚗 قيد التوصيل
-        <span class="ds-count">${inDeliveryOrders.length}</span>
+      <div class="prep-order-meta">
+        <span class="badge b-sky">💰 ${(parseFloat(o.total)||0).toLocaleString()} د.ع</span>
+        <span class="badge b-teal">📐 ${vol} م³</span>
+        <span class="badge b-mint">⚖️ ${wgt} كغ</span>
+        <span class="badge b-violet">📅 ${o.date || tsToStr(o.createdAt) || '—'}</span>
       </div>
-      ${inDeliveryOrders.map(o => _drvCardActive(o)).join('')}`;
-  }
-
-  // ─── القسم 3: سجل التوصيلات ───
-  let deliveredHtml = '';
-  if (myDelivered.length) {
-    deliveredHtml = `
-      <div class="driver-section-hdr done" style="margin-top:${(preparedOrders.length || inDeliveryOrders.length) ? '18px' : '0'}">
-        📋 سجل التوصيلات
-        <span class="ds-count">${myDelivered.length}</span>
+      ${items.length ? `
+      <div class="prep-items-list">
+        ${items.map((item, idx) => `
+          <div class="prep-item-row">
+            <span style="font-size:.72rem;font-weight:800;color:rgba(9,50,87,.3);min-width:18px">${idx+1}</span>
+            <span class="prep-item-name">${item.name}</span>
+            <span class="badge b-sky" style="font-weight:800">${item.qty} ×</span>
+          </div>`).join('')}
+      </div>` : `<div style="font-size:.8rem;color:rgba(9,50,87,.4);padding:7px 0">${o.products || '—'}</div>`}
+      <div style="margin-top:12px">
+        <div style="font-size:.72rem;font-weight:800;color:rgba(9,50,87,.45);margin-bottom:8px;letter-spacing:.04em">🚚 نوع المركبة</div>
+        <div class="vehicle-selector" id="vehicle_${o._id}">
+          <button class="vehicle-opt ${o.vehicle_type==='ستوتة'?'selected':''}" onclick="selectVehicle('${o._id}','ستوتة',this)"><span class="v-icon">🛵</span>ستوتة</button>
+          <button class="vehicle-opt ${o.vehicle_type==='حمل صغيرة'?'selected':''}" onclick="selectVehicle('${o._id}','حمل صغيرة',this)"><span class="v-icon">🚐</span>حمل صغيرة</button>
+          <button class="vehicle-opt ${o.vehicle_type==='شاحنة'?'selected':''}" onclick="selectVehicle('${o._id}','شاحنة',this)"><span class="v-icon">🚛</span>شاحنة</button>
+        </div>
       </div>
-      ${myDelivered.map(o => _drvCardDone(o)).join('')}`;
-  }
-
-  listEl.innerHTML = readyHtml + onRoadHtml + deliveredHtml;
+      <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">
+        <button class="btn btn-ghost btn-sm" style="gap:4px" onclick="openPrepEditModal('${o._id}')">✏️ تعديل الكميات</button>
+        <button class="btn btn-mint" style="flex:1;font-weight:800" onclick="markAsPrepared('${o._id}')">✅ تم التجهيز</button>
+      </div>
+    </div>`;
+  }).join('');
 }
 
-// ─── بطاقة: جاهز للتحميل ─────────────────────────────
-function _drvCardPrepared(o) {
-  const prepTime = o.prepared_at
-    ? `<span class="badge b-mint">🕐 ${new Date(o.prepared_at).toLocaleTimeString('ar-IQ',{hour:'2-digit',minute:'2-digit'})}</span>`
-    : '';
-  const items = o.cartItemsArray || (o.products ? o.products.split('،').map(s => s.trim()).filter(Boolean) : []);
-  const itemsHtml = items.length
-    ? `<div class="drv-products" style="margin-bottom:8px">🛒 ${items.slice(0,5).map(i => typeof i === 'object' ? `${i.name} ×${i.qty}` : i).join(' — ')}${items.length > 5 ? ` (+${items.length-5})` : ''}</div>`
-    : (o.products ? `<div class="drv-products">${esc(o.products)}</div>` : '');
-  return `
-  <div class="driver-prepared-card">
-    <div class="drv-card-hd">
-      <div>
-        <div class="drv-shop">🏪 ${esc(o.shopName || '—')}</div>
-        <div class="drv-id">${esc(o.orderId || o._id)}</div>
-      </div>
-      <span class="badge b-mint" style="animation:pulse 2s infinite;white-space:nowrap;font-weight:800">📦 جاهز للتحميل</span>
-    </div>
-    <div class="drv-meta">
-      <span class="badge b-sky">💰 ${(parseFloat(o.total)||0).toLocaleString()} د.ع</span>
-      ${o.vehicle_type ? `<span class="badge b-violet">🚚 ${esc(o.vehicle_type)}</span>` : ''}
-      ${prepTime}
-      ${o.total_volume ? `<span class="badge b-teal">📐 ${parseFloat(o.total_volume).toFixed(2)} م³</span>` : ''}
-    </div>
-    ${o.shopAddress || o.shopAddr ? `<div class="drv-products">📍 ${esc(o.shopAddress || o.shopAddr)}</div>` : ''}
-    ${itemsHtml}
-    <div class="drv-actions">
-      ${o.location ? `<a href="${o.location}" target="_blank" class="btn btn-ghost btn-sm">🗺️ الموقع</a>` : ''}
-      <button class="btn btn-mint" style="flex:2;font-weight:800" onclick="markAsLoaded('${o._id}')">🚗 تم التحميل — ابدأ التوصيل</button>
-    </div>
-  </div>`;
+// ─── اختيار نوع المركبة ───────────────────────────────
+async function selectVehicle(orderId, vehicleType, btn) {
+  const wrap = document.getElementById('vehicle_' + orderId);
+  if (wrap) wrap.querySelectorAll('.vehicle-opt').forEach(b => b.classList.remove('selected'));
+  btn.classList.add('selected');
+  await fbUpdate('orders', orderId, { vehicle_type: vehicleType }).catch(() => {});
+  toast(`تم اختيار: ${vehicleType}`);
 }
 
-// ─── بطاقة: قيد التوصيل ──────────────────────────────
-function _drvCardActive(o) {
-  const isNear = o.status === 'NearCustomer';
-  const statusBadge = isNear
-    ? `<span class="badge b-gold" style="animation:pulse 1.5s infinite">📍 قريب من الزبون</span>`
-    : `<span class="badge b-sky">🚗 في الطريق</span>`;
-  const loadTime = o.loaded_at
-    ? `<span class="badge b-teal">🕐 ${new Date(o.loaded_at).toLocaleTimeString('ar-IQ',{hour:'2-digit',minute:'2-digit'})}</span>`
-    : '';
-  return `
-  <div class="driver-active-card">
-    <div class="drv-card-hd">
-      <div>
-        <div class="drv-shop">🏪 ${esc(o.shopName || '—')}</div>
-        <div class="drv-id">${esc(o.orderId || o._id)}</div>
-      </div>
-      ${statusBadge}
-    </div>
-    <div class="drv-meta">
-      <span class="badge b-sky">💰 ${(parseFloat(o.total)||0).toLocaleString()} د.ع</span>
-      ${o.vehicle_type ? `<span class="badge b-violet">🚚 ${esc(o.vehicle_type)}</span>` : ''}
-      ${loadTime}
-    </div>
-    ${o.shopAddress || o.shopAddr ? `<div class="drv-products">📍 ${esc(o.shopAddress || o.shopAddr)}</div>` : ''}
-    ${o.products ? `<div class="drv-products">🛒 ${esc(o.products)}</div>` : ''}
-    <div class="drv-actions">
-      ${o.location ? `<a href="${o.location}" target="_blank" class="btn btn-ghost btn-sm">🗺️ الموقع</a>` : ''}
-      ${!isNear ? `<button class="btn btn-gold btn-sm" onclick="markAsNearCustomer('${o._id}')">📍 أنا قريب</button>` : ''}
-      <button class="btn btn-mint" style="flex:2" onclick="openDeliveryProof('${o._id}','${esc(o.driver_id || '')}')">✅ تأكيد التسليم</button>
-    </div>
-  </div>`;
-}
-
-// ─── بطاقة: مُسلَّم ───────────────────────────────────
-function _drvCardDone(o) {
-  const confirmed = !!o.customer_confirmed;
-  const confirmBadge = confirmed
-    ? `<span class="badge b-mint">✅ أكد الزبون الاستلام</span>`
-    : `<span class="badge b-gold">⏳ انتظار تأكيد الزبون</span>`;
-  return `
-  <div class="driver-done-card">
-    <div class="drv-card-hd">
-      <div>
-        <div class="drv-shop" style="font-size:.9rem;color:var(--mid)">🏪 ${esc(o.shopName || '—')}</div>
-        <div class="drv-id">${esc(o.orderId || o._id)}</div>
-      </div>
-      <div style="display:flex;flex-direction:column;align-items:flex-end;gap:5px">
-        <span class="badge b-teal">📦 مُسلَّم</span>
-        ${confirmBadge}
-      </div>
-    </div>
-    <div class="drv-meta">
-      <span class="badge b-sky">💰 ${(parseFloat(o.total)||0).toLocaleString()} د.ع</span>
-      ${o.delivered_at ? `<span class="badge b-teal">🕐 ${new Date(o.delivered_at).toLocaleDateString('ar-IQ')}</span>` : ''}
-    </div>
-    ${o.proof_url ? `<a href="${o.proof_url}" target="_blank" class="btn btn-ghost btn-sm" style="pointer-events:auto">📷 إثبات التسليم</a>` : ''}
-  </div>`;
-}
-
-// ─── تحديد الطلب كـ "قيد التوصيل" ───────────────────
-async function markAsLoaded(orderId) {
+// ─── تحديد الطلب كـ "مجهز" ───────────────────────────
+async function markAsPrepared(orderId) {
   if (!CU) return;
   const now = new Date().toISOString();
   await fbUpdate('orders', orderId, {
-    status: 'In Delivery', driver_id: CU.username,
-    driver_name: CU.name, loaded_at: now
+    status: 'Prepared',
+    prepared_by: CU.username,
+    prepared_by_name: CU.name,
+    prepared_at: now
   }).catch(() => {});
-  toast('تم تحديد الطلب كـ "قيد التوصيل"');
-  renderDriverDashboard();
-  const ord = orders.find(o => o._id === orderId);
-  if (ord) {
-    await notifyCustomer(ord, '🚗 طلبك في الطريق إليك!', `طلبك أصبح في الطريق — السائق: ${CU.name}`).catch(()=>{});
+  toast('تم تحديد الطلب كـ "مجهز"');
+  renderPrepDashboard();
+
+  const prepOrd = orders.find(o => o._id === orderId);
+
+  await fbAdd('notifications', {
+    title: '🚗 طلب جاهز للتوصيل',
+    body: `طلب رقم ${orderId}${prepOrd ? ' — ' + prepOrd.shopName : ''} جاهز للتحميل`,
+    type: 'order', read: false, targetUser: 'driver',
+    orderId, date: new Date().toLocaleDateString('ar-IQ')
+  }).catch(() => {});
+  browserNotif('🚗 طلب جاهز للتوصيل', 'طلب جديد جاهز للتحميل');
+
+  if (prepOrd) {
+    await notifyCustomer(prepOrd, '📦 تم تجهيز طلبك!', 'طلبك جاهز وخرج من المخزن — جارٍ تعيين السائق').catch(()=>{});
   }
-  sendFCMPushToAdmins('🚗 طلب قيد التوصيل', `${ord?.shopName||orderId} — السائق: ${CU.name}`).catch(()=>{});
-}
+  sendFCMPushToAdmins('📦 طلب جاهز للتوصيل', `${prepOrd?.shopName||orderId} — جاهز للتحميل`).catch(()=>{});
 
-// ─── إشعار "أنا قريب" ────────────────────────────────
-async function markAsNearCustomer(orderId) {
-  if (!CU) return;
-  await fbUpdate('orders', orderId, { status: 'NearCustomer', near_at: new Date().toISOString() }).catch(() => {});
-  toast('📍 تم إشعار الزبون بأنك قريب');
-  renderDriverDashboard();
-  const ord = orders.find(o => o._id === orderId);
-  if (ord) {
-    await notifyCustomer(ord, '🚚 السائق قريب منك!', `طلبك سيصل خلال دقائق — ${CU.name} في طريقه إليك`).catch(()=>{});
+  // إشعار تيليغرام لمجموعة السائقين برابط مباشر
+  const _driverLink = `https://brjman.com/driver.html?order=${prepOrd?.orderId || orderId}`;
+  const _prepItems = prepOrd ? (prepOrd.cartItemsArray || parseCartItems(prepOrd.products || '')) : [];
+  let _itemsList = '';
+  if (_prepItems.length) {
+    _itemsList = `\n📋 *القائمة المجهزة:*\n`;
+    _prepItems.forEach(it => { _itemsList += `  • ${it.name} × ${it.qty}\n`; });
+  }
+  const _driverTgMsg =
+    `🚗 *طلب جاهز للتحميل والتوصيل*\n` +
+    `━━━━━━━━━━━━━━━━━━\n` +
+    `🏪 المحل: ${prepOrd?.shopName || '—'}\n` +
+    `🆔 رقم الطلب: ${prepOrd?.orderId || orderId}\n` +
+    `📍 العنوان: ${prepOrd?.shopAddr || '—'}\n` +
+    `💰 الإجمالي: ${(parseFloat(prepOrd?.total)||0).toLocaleString()} د.ع\n` +
+    _itemsList +
+    `━━━━━━━━━━━━━━━━━━\n` +
+    `🔗 رابط السائق:\n${_driverLink}`;
+  const _TG_TOKEN = window.COMPANY?.telegram_token || '';
+  const _driverChat = (typeof driverTelegram !== 'undefined' ? driverTelegram : '') || '';
+  if (_TG_TOKEN && _driverChat) {
+    fetch(`https://api.telegram.org/bot${_TG_TOKEN}/sendMessage`, {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ chat_id: _driverChat, text: _driverTgMsg, parse_mode: 'Markdown' })
+    }).catch(() => {});
+  }
+  // إشعار فردي لكل سائق عنده معرف تيليجرام — يتضمن بيانات الدخول
+  if (_TG_TOKEN && typeof users !== 'undefined') {
+    users.filter(u => u.type === 'driver' && u.telegram).forEach(u => {
+      const _driverPersonalMsg =
+        `🚗 *طلب جاهز للتحميل والتوصيل*\n` +
+        `━━━━━━━━━━━━━━━━━━\n` +
+        `🏪 المحل: ${prepOrd?.shopName || '—'}\n` +
+        `🆔 رقم الطلب: ${prepOrd?.orderId || orderId}\n` +
+        `📍 العنوان: ${prepOrd?.shopAddr || '—'}\n` +
+        `💰 الإجمالي: ${(parseFloat(prepOrd?.total)||0).toLocaleString()} د.ع\n` +
+        _itemsList +
+        `━━━━━━━━━━━━━━━━━━\n` +
+        `🔐 *بيانات دخولك:*\n` +
+        `👤 المستخدم: \`${u.username}\`\n` +
+        `🔑 كلمة المرور: \`${u.password||'—'}\`\n` +
+        `━━━━━━━━━━━━━━━━━━\n` +
+        `🔗 رابط السائق:\n${_driverLink}`;
+      fetch(`https://api.telegram.org/bot${_TG_TOKEN}/sendMessage`, {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ chat_id: u.telegram, text: _driverPersonalMsg, parse_mode: 'Markdown' })
+      }).catch(() => {});
+    });
   }
 }
 
-// ─── إثبات التسليم (صورة / توقيع) ───────────────────
-let _proofPhotoDataUrl = null, _sigDrawing = false, _sigCtx = null;
-let _currentProofTab = 'photo';
-
-function openDeliveryProof(orderId, driverId) {
-  document.getElementById('proofOrderId').value = orderId;
-  const driverIdEl = document.getElementById('proofDriverId');
-  if (driverIdEl) driverIdEl.value = driverId || CU?.username || '';
-  _proofPhotoDataUrl = null;
-  const preview = document.getElementById('proofPhotoPreview');
-  if (preview) { preview.src = ''; preview.style.display = 'none'; }
-  const photoInput = document.getElementById('proofPhotoInput');
-  if (photoInput) photoInput.value = '';
-  _sigCtx = null;
-  switchProofTab('photo');
-  openModal('driverProofModal');
-  setTimeout(initSigCanvas, 200);
-}
-
-function switchProofTab(tab) {
-  _currentProofTab = tab;
-  document.getElementById('proofPhotoPane').style.display = tab === 'photo' ? 'block' : 'none';
-  document.getElementById('proofSigPane').style.display   = tab === 'sig'   ? 'block' : 'none';
-  document.getElementById('proofTabPhoto').classList.toggle('active', tab === 'photo');
-  document.getElementById('proofTabSig').classList.toggle('active', tab === 'sig');
-}
-
-function handleProofPhoto(e) {
-  const file = e.target.files[0];
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = ev => {
-    _proofPhotoDataUrl = ev.target.result;
-    const preview = document.getElementById('proofPhotoPreview');
-    preview.src = _proofPhotoDataUrl;
-    preview.style.display = 'block';
-  };
-  reader.readAsDataURL(file);
-}
-
-function initSigCanvas() {
-  const canvas = document.getElementById('sigCanvas');
-  if (!canvas || _sigCtx) return;
-  _sigCtx = canvas.getContext('2d');
-  _sigCtx.strokeStyle = '#093257';
-  _sigCtx.lineWidth = 2.5;
-  _sigCtx.lineCap = 'round';
-
-  function getPos(e) {
-    const rect = canvas.getBoundingClientRect();
-    const scaleX = canvas.width / rect.width;
-    const scaleY = canvas.height / rect.height;
-    if (e.touches) {
-      return { x: (e.touches[0].clientX - rect.left) * scaleX, y: (e.touches[0].clientY - rect.top) * scaleY };
-    }
-    return { x: (e.clientX - rect.left) * scaleX, y: (e.clientY - rect.top) * scaleY };
+// ─── تعديل كميات الطلب ───────────────────────────────
+async function openPrepEditModal(orderId) {
+  let rawOrd = orders.find(o => o._id === orderId);
+  if (!rawOrd && window._fbReady) {
+    try {
+      const snap = await fb().getDoc(fb().doc(db(), 'orders', orderId));
+      if (snap.exists()) rawOrd = { _id: snap.id, ...snap.data() };
+    } catch(e) { console.warn('openPrepEditModal getDoc:', e); }
   }
+  if (!rawOrd) { toast('لم يتم العثور على الطلب', false); return; }
 
-  const start = e => { _sigDrawing = true; _sigCtx.beginPath(); const p = getPos(e); _sigCtx.moveTo(p.x, p.y); e.preventDefault(); };
-  const draw  = e => { if (!_sigDrawing) return; const p = getPos(e); _sigCtx.lineTo(p.x, p.y); _sigCtx.stroke(); e.preventDefault(); };
-  const end   = () => { _sigDrawing = false; };
+  document.getElementById('prepEditOrderId').value = orderId;
+  document.getElementById('prepEditOrderInfo').innerHTML =
+    `🏪 ${rawOrd.shopName || '—'} — 💰 ${(parseFloat(rawOrd.total)||0).toLocaleString()} د.ع`;
 
-  canvas.addEventListener('mousedown', start);
-  canvas.addEventListener('mousemove', draw);
-  canvas.addEventListener('mouseup',   end);
-  canvas.addEventListener('touchstart', start, { passive: false });
-  canvas.addEventListener('touchmove',  draw,  { passive: false });
-  canvas.addEventListener('touchend',   end);
-}
-
-function clearSignature() {
-  const canvas = document.getElementById('sigCanvas');
-  if (!canvas || !_sigCtx) return;
-  _sigCtx.clearRect(0, 0, canvas.width, canvas.height);
-}
-
-async function confirmDeliveryWithProof() {
-  const orderId  = document.getElementById('proofOrderId').value;
-  const statusEl = document.getElementById('proofUploadStatus');
-  let proofDataUrl = null;
-
-  if (_currentProofTab === 'photo') {
-    if (!_proofPhotoDataUrl) { toast('⚠️ يرجى التقاط صورة أولاً', false); return; }
-    proofDataUrl = _proofPhotoDataUrl;
+  const items = rawOrd.cartItemsArray || parseCartItems(rawOrd.products);
+  let itemsHtml = '';
+  if (items.length) {
+    itemsHtml = items.map((item) => {
+      const prod = products.find(p => p.name === item.name);
+      return `
+      <div class="prep-item-row" style="flex-direction:column;align-items:flex-start;gap:7px">
+        <div style="font-weight:700;color:var(--deep)">${item.name}</div>
+        <div style="display:flex;align-items:center;gap:9px;width:100%">
+          <span style="font-size:.75rem;color:rgba(9,50,87,.45)">الكمية الأصلية: ${item.qty}</span>
+          <input type="number" class="fi prep-edit-qty" data-name="${esc(item.name)}" data-price="${prod?.price || item.price || 0}"
+            style="width:90px;padding:6px 9px;font-size:.85rem" value="${item.qty}" min="0" oninput="recalcPrepEditTotal()">
+        </div>
+      </div>`;
+    }).join('');
   } else {
-    const canvas = document.getElementById('sigCanvas');
-    if (!canvas) { toast('خطأ في التوقيع', false); return; }
-    const blank = document.createElement('canvas');
-    blank.width = canvas.width; blank.height = canvas.height;
-    if (canvas.toDataURL() === blank.toDataURL()) { toast('⚠️ يرجى رسم توقيعك أولاً', false); return; }
-    proofDataUrl = canvas.toDataURL('image/png');
+    itemsHtml = `<div style="padding:10px;text-align:center;color:rgba(9,50,87,.4)">${rawOrd.products || '—'}</div>`;
   }
+  document.getElementById('prepEditItemsList').innerHTML = itemsHtml;
+  recalcPrepEditTotal();
+  openModal('prepEditModal');
+}
 
-  statusEl.style.display = 'block';
-  statusEl.textContent = '⏳ جاري الرفع...';
+function recalcPrepEditTotal() {
+  let total = 0;
+  document.querySelectorAll('.prep-edit-qty').forEach(input => {
+    total += (parseInt(input.value) || 0) * (parseFloat(input.dataset.price) || 0);
+  });
+  const el = document.getElementById('prepEditTotal');
+  if (el) el.textContent = total.toLocaleString();
+}
 
-  let proofUrl = '';
-  try {
-    const base64 = proofDataUrl.split(',')[1];
-    const fd = new FormData();
-    fd.append('image', base64);
-    fd.append('key', IMGBB_API_KEY);
-    const resp = await fetch('https://api.imgbb.com/1/upload', { method: 'POST', body: fd });
-    const data = await resp.json();
-    if (data.success) proofUrl = data.data.url;
-  } catch(e) {
-    proofUrl = proofDataUrl;
-  }
+async function savePrepEditQuantities() {
+  const orderId = document.getElementById('prepEditOrderId').value;
+  if (!orderId) return;
 
-  const now = new Date().toISOString();
+  const updatedItems = [];
+  document.querySelectorAll('.prep-edit-qty').forEach(input => {
+    updatedItems.push({ name: input.dataset.name, qty: parseInt(input.value) || 0, price: parseFloat(input.dataset.price) || 0 });
+  });
+
+  const newTotal = updatedItems.reduce((s, i) => s + i.qty * i.price, 0);
+  const newProducts = updatedItems.map(i => `${i.name}(${i.qty})`).join('، ');
+  const commPct = orders.find(o => o._id === orderId)?.commPct || 0;
+  const commission = Math.round(newTotal * commPct / 100);
+
   await fbUpdate('orders', orderId, {
-    status: 'Delivered', delivered_at: now,
-    proof_url: proofUrl, driver_id: CU?.username, driver_name: CU?.name
+    products: newProducts, cartItemsArray: updatedItems,
+    total: newTotal, commission, net: newTotal - commission,
+    qty_edited_by: CU?.username, qty_edited_at: new Date().toISOString()
   }).catch(() => {});
 
-  statusEl.textContent = 'تم التسليم!';
-  setTimeout(() => { closeModal('driverProofModal'); statusEl.style.display = 'none'; }, 800);
-
-  toast('تم تأكيد التسليم');
-  renderDriverDashboard();
-
-  const delivOrd = orders.find(o => o._id === orderId);
-  if (delivOrd) {
-    await notifyCustomer(delivOrd, '✅ تم توصيل طلبك!', 'طلبك وصل بنجاح — شكراً لاختيارك برجمان').catch(()=>{});
-  }
-  sendFCMPushToAdmins('✅ طلب مُسلَّم', `${delivOrd?.shopName||orderId} — تم التسليم`).catch(()=>{});
+  closeModal('prepEditModal');
+  toast('تم تحديث الكميات والإجمالي');
+  renderPrepDashboard();
 }
