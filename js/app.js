@@ -79,11 +79,8 @@ async function loadCompanySettings() {}
 async function loadProtectedKeys() {
   if (!CU || !fbReady) return;
 
-  // الإيميل المخوَّل: محفوظ في الإعدادات أو الافتراضي من ADMIN_EMAILS
-  const authEmail = window.COMPANY?.keys_auth_email || ADMIN_EMAILS[0] || '';
-  const userEmail = (CU.email || '').toLowerCase().trim();
-
-  if (!authEmail || userEmail !== authEmail.toLowerCase().trim()) return;
+  // أي مستخدم من نوع admin أو sales_manager يحصل على المفاتيح المحمية
+  if (CU.type !== 'admin' && CU.type !== 'sales_manager') return;
 
   try {
     const snap = await fb().getDocs(
@@ -104,6 +101,11 @@ async function loadProtectedKeys() {
 
     // ── تحديث مفتاح ImgBB ──
     IMGBB_API_KEY = window.COMPANY.imgbb_key || 'a2173ed14e8a5d9288b6dbb4a56c8c78';
+
+    // ── تحديث متغيرات التيليغرام (محمية الآن) ──
+    if (window.COMPANY.telegram_token)    {} // محمّل في window.COMPANY
+    if (window.COMPANY.preparer_telegram) preparerTelegram = window.COMPANY.preparer_telegram;
+    if (window.COMPANY.driver_telegram)   driverTelegram   = window.COMPANY.driver_telegram;
 
     console.log('[🔐] المفاتيح المحمية مُحمَّلة بنجاح');
   } catch(e) {
