@@ -177,6 +177,35 @@ async function markAsPrepared(orderId) {
     await notifyCustomer(prepOrd, '📦 تم تجهيز طلبك!', 'طلبك جاهز وخرج من المخزن — جارٍ تعيين السائق').catch(()=>{});
   }
   sendFCMPushToAdmins('📦 طلب جاهز للتوصيل', `${prepOrd?.shopName||orderId} — جاهز للتحميل`).catch(()=>{});
+
+  // إشعار تيليغرام لمجموعة السائقين برابط مباشر
+  const _driverLink = `https://brjman.com/driver.html?order=${prepOrd?.orderId || orderId}`;
+  const _driverTgMsg =
+    `🚗 *طلب جاهز للتحميل والتوصيل*\n` +
+    `━━━━━━━━━━━━━━━━━━\n` +
+    `🏪 المحل: ${prepOrd?.shopName || '—'}\n` +
+    `🆔 رقم الطلب: ${prepOrd?.orderId || orderId}\n` +
+    `📍 العنوان: ${prepOrd?.shopAddr || '—'}\n` +
+    `💰 الإجمالي: ${(parseFloat(prepOrd?.total)||0).toLocaleString()} د.ع\n` +
+    `━━━━━━━━━━━━━━━━━━\n` +
+    `🔗 رابط السائق:\n${_driverLink}`;
+  const _TG_TOKEN = window.COMPANY?.telegram_token || '';
+  const _driverChat = (typeof driverTelegram !== 'undefined' ? driverTelegram : '') || '';
+  if (_TG_TOKEN && _driverChat) {
+    fetch(`https://api.telegram.org/bot${_TG_TOKEN}/sendMessage`, {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ chat_id: _driverChat, text: _driverTgMsg, parse_mode: 'Markdown' })
+    }).catch(() => {});
+  }
+  // إشعار فردي لكل سائق عنده معرف تيليجرام
+  if (_TG_TOKEN && typeof users !== 'undefined') {
+    users.filter(u => u.type === 'driver' && u.telegram).forEach(u => {
+      fetch(`https://api.telegram.org/bot${_TG_TOKEN}/sendMessage`, {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ chat_id: u.telegram, text: _driverTgMsg, parse_mode: 'Markdown' })
+      }).catch(() => {});
+    });
+  }
 }
 
 // ─── تعديل كميات الطلب ───────────────────────────────
