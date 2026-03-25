@@ -1,62 +1,74 @@
 rules_version = '2';
 // ════════════════════════════════════════════════════════
 // Firestore Security Rules — برجمان
-// يجب رفع هذا الملف عبر Firebase Console أو CLI
-// firebase deploy --only firestore:rules
+// ارفع هذا الملف عبر: firebase deploy --only firestore:rules
+// أو من Firebase Console → Firestore → Rules
 // ════════════════════════════════════════════════════════
 
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // ─── دوال مساعدة ───────────────────────────────────
+    // ─── دوال مساعدة ────────────────────────────────────
     function isAuth() {
       return request.auth != null;
     }
 
-    // ─── المستخدمون: القراءة مفتوحة للمصادقين، الكتابة للمستخدم نفسه أو الأدمن ───
-    match /users/{userId} {
-      allow read: if isAuth();
-      allow write: if isAuth() && (request.auth.uid == userId || request.auth.token.admin == true);
+    function isAdmin() {
+      // يتطلب custom claim — يُضبط عبر Firebase Admin SDK
+      return request.auth != null && request.auth.token.admin == true;
     }
 
-    // ─── الطلبات: القراءة والكتابة للمصادقين فقط ───────
+    // ─── الإعدادات ───────────────────────────────────────
+    // غير المحمية: قراءة عامة (اسم الشركة، الثيم...)
+    // المحمية (توكن تيليغرام، مفاتيح API...): للمصادقين فقط
+    // الكتابة: للأدمن فقط
+    match /settings/{settingId} {
+      allow read: if resource == null
+                  || resource.data.protected != true
+                  || isAuth();
+      allow write: if isAdmin();
+    }
+
+    // ─── المستخدمون ──────────────────────────────────────
+    // القراءة: للمصادقين فقط (السائق لا يرى كلمات مرور الآخرين — يُحسَّن مستقبلاً)
+    // الكتابة: الشخص نفسه أو الأدمن
+    match /users/{userId} {
+      allow read: if isAuth();
+      allow create: if isAdmin();
+      allow update: if isAdmin() || (isAuth() && request.auth.uid == userId);
+      allow delete: if isAdmin();
+    }
+
+    // ─── الطلبات ─────────────────────────────────────────
     match /orders/{orderId} {
       allow read, write: if isAuth();
     }
 
-    // ─── الإعدادات: القراءة عامة، الكتابة للأدمن فقط ───
-    match /settings/{settingId} {
-      // الإعدادات غير المحمية: قراءة عامة
-      allow read: if resource.data.protected != true;
-      // الإعدادات المحمية: قراءة للمصادقين فقط
-      allow read: if isAuth() && resource.data.protected == true;
-      // الكتابة: للمصادقين فقط (يجب إضافة فحص الدور بعد ترقية المصادقة)
-      allow write: if isAuth();
-    }
-
-    // ─── المنتجات: قراءة عامة، كتابة للمصادقين ─────────
+    // ─── المنتجات ────────────────────────────────────────
+    // القراءة: عامة (للعملاء)
+    // الكتابة: للأدمن فقط
     match /products/{productId} {
       allow read: if true;
-      allow write: if isAuth();
+      allow write: if isAdmin();
     }
 
-    // ─── الإشعارات: للمصادقين فقط ───────────────────────
+    // ─── الإشعارات ───────────────────────────────────────
     match /notifications/{notifId} {
       allow read, write: if isAuth();
     }
 
-    // ─── العروض والحملات: قراءة عامة ───────────────────
+    // ─── العروض والحملات ─────────────────────────────────
     match /offers/{offerId} {
       allow read: if true;
-      allow write: if isAuth();
+      allow write: if isAdmin();
     }
 
     match /campaigns/{campId} {
       allow read: if true;
-      allow write: if isAuth();
+      allow write: if isAdmin();
     }
 
-    // ─── الباقي: للمصادقين فقط ──────────────────────────
+    // ─── الباقي: للمصادقين فقط ───────────────────────────
     match /{document=**} {
       allow read, write: if isAuth();
     }
