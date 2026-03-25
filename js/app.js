@@ -103,7 +103,7 @@ async function loadProtectedKeys() {
     }
 
     // ── تحديث مفتاح ImgBB ──
-    IMGBB_API_KEY = window.COMPANY.imgbb_key || '';
+    IMGBB_API_KEY = window.COMPANY.imgbb_key || 'a2173ed14e8a5d9288b6dbb4a56c8c78';
 
     console.log('[🔐] المفاتيح المحمية مُحمَّلة بنجاح');
   } catch(e) {
@@ -1753,7 +1753,7 @@ function buildDashboard(){
 
     mgmtEl.innerHTML = `
       <div style="font-size:.84rem;font-weight:800;color:rgba(9,50,87,.45);margin-bottom:12px;letter-spacing:.04em">⚡ الإدارة السريعة</div>
-      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px">
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px">
         ${tiles.map(t=>`
           <div onclick="${t.url?`window.open('${t.url}','_blank')`:`showPage('${t.page}')`}"
             style="background:var(--frost,#fff);border:1.5px solid rgba(0,0,0,.07);border-radius:16px;
