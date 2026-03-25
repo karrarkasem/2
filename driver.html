@@ -866,6 +866,27 @@
             } catch (error) {
                 console.error('Error loading orders:', error);
             }
+            // فتح الطلب مباشرة إذا جاء من رابط تيليغرام
+            highlightUrlOrder();
+        }
+
+        // تمييز الطلب المحدد من URL param
+        function highlightUrlOrder() {
+            const _urlOrderId = new URLSearchParams(window.location.search).get('order');
+            if (!_urlOrderId) return;
+            setTimeout(() => {
+                // البحث بـ orderId أو id
+                const _target = allOrders.find(o => o.orderId === _urlOrderId || o.id === _urlOrderId);
+                if (!_target) return;
+                const _card = document.querySelector(`[data-order-id="${_target.id}"]`);
+                if (_card) {
+                    _card.style.outline = '3px solid #0ea5e9';
+                    _card.style.boxShadow = '0 0 0 6px rgba(14,165,233,.25)';
+                    _card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    // إظهار تنبيه للسائق
+                    toast(`📦 طلب محدد: ${_target.shopName || _urlOrderId}`);
+                }
+            }, 500);
         }
 
         // Real-time listener
@@ -976,7 +997,7 @@
             }
 
             return `
-                <div class="order-card ${type === 'delivered' ? 'delivered-card' : ''}">
+                <div class="order-card ${type === 'delivered' ? 'delivered-card' : ''}" data-order-id="${order.id}">
                     <div class="order-header">
                         <div>
                             <div class="order-shop">🏪 ${order.shopName || '—'}</div>
