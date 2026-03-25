@@ -2530,7 +2530,17 @@ function switchInvTab(tab,btn){
 // USERS
 // ═══════════════════════════════════════════════════════
 function renderUsersList(){
-  document.getElementById('usersList').innerHTML=users.map((u,i)=>`
+  const el = document.getElementById('usersList');
+  if (!el) return;
+  if (!users.length) {
+    el.innerHTML = `<div style="text-align:center;padding:40px 20px;color:var(--muted)">
+      <div style="font-size:2.5rem;margin-bottom:10px">👥</div>
+      <div style="font-weight:700">لا يوجد مستخدمون حتى الآن</div>
+      <div style="font-size:.8rem;margin-top:6px">اضغط "+ إضافة مستخدم" لإضافة أول مستخدم</div>
+    </div>`;
+    return;
+  }
+  el.innerHTML=users.map((u,i)=>`
     <div class="user-item">
       <div class="ui-av">${u.type==='admin'?'🛡️':u.type==='rep'?'🤝':u.type==='sales_manager'?'📊':'🏪'}</div>
       <div class="ui-info">
@@ -2679,43 +2689,44 @@ async function peFileChosen(e){
   const fill = document.getElementById('uploadFill');
   const txt  = document.getElementById('uploadTxt');
   prog.style.display = 'block';
-  txt.textContent = 'جاري الرفع على ImgBB...';
   fill.style.width = '15%';
 
   try {
-    // تحويل الصورة إلى Base64
-    const base64 = await new Promise((res, rej) => {
-      const r = new FileReader();
-      r.onload  = () => res(r.result.split(',')[1]);
-      r.onerror = () => rej(new Error('فشل قراءة الملف'));
-      r.readAsDataURL(file);
-    });
+    let url = '';
 
-    fill.style.width = '40%';
-    txt.textContent = 'جاري الرفع...';
+    if (IMGBB_API_KEY) {
+      // ── رفع على ImgBB (إذا المفتاح متوفر) ──
+      txt.textContent = 'جاري الرفع على ImgBB...';
+      const base64 = await new Promise((res, rej) => {
+        const r = new FileReader();
+        r.onload  = () => res(r.result.split(',')[1]);
+        r.onerror = () => rej(new Error('فشل قراءة الملف'));
+        r.readAsDataURL(file);
+      });
+      fill.style.width = '40%';
+      const formData = new FormData();
+      formData.append('image', base64);
+      formData.append('key', IMGBB_API_KEY);
+      const response = await fetch('https://api.imgbb.com/1/upload', { method:'POST', body:formData });
+      fill.style.width = '85%';
+      if(!response.ok) throw new Error('فشل الاتصال بـ ImgBB');
+      const data = await response.json();
+      if(!data.success) throw new Error(data.error?.message || 'فشل الرفع على ImgBB');
+      url = data.data.url;
+    } else {
+      // ── fallback: رفع على Firebase Storage ──
+      txt.textContent = 'جاري الرفع على Firebase Storage...';
+      const { storageRef, uploadBytes, getDownloadURL } = fb();
+      const _ref = storageRef(window['_storage'], `products/${Date.now()}_${file.name}`);
+      fill.style.width = '50%';
+      await uploadBytes(_ref, file);
+      fill.style.width = '85%';
+      url = await getDownloadURL(_ref);
+    }
 
-    // رفع على ImgBB
-    const formData = new FormData();
-    formData.append('image', base64);
-    formData.append('key', IMGBB_API_KEY);
-
-    const response = await fetch('https://api.imgbb.com/1/upload', {
-      method: 'POST',
-      body: formData
-    });
-
-    fill.style.width = '85%';
-
-    if(!response.ok) throw new Error('فشل الاتصال بـ ImgBB');
-
-    const data = await response.json();
-
-    if(!data.success) throw new Error(data.error?.message || 'فشل الرفع على ImgBB');
-
-    const url = data.data.url;
     fill.style.width = '100%';
     fill.style.background = 'linear-gradient(90deg, var(--mint), var(--teal))';
-    txt.textContent = 'تم الرفع بنجاح على ImgBB!';
+    txt.textContent = '✅ تم الرفع بنجاح!';
 
     _uploadedImgUrl = url;
     document.getElementById('pe_img').value = url;
@@ -2729,7 +2740,7 @@ async function peFileChosen(e){
     }, 2500);
 
   } catch(err) {
-    console.error('ImgBB upload error:', err);
+    console.error('Image upload error:', err);
     fill.style.background = 'var(--rose)';
     fill.style.width = '100%';
     txt.textContent = '❌ فشل الرفع: ' + err.message;
