@@ -734,7 +734,6 @@ service cloud.firestore {
 <script type="module">
 import { initializeApp, getApps } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import { getFirestore, collection, doc, getDocs, setDoc, getDoc, query, where } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
-import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 
 const cfg = {
   apiKey:"AIzaSyBMLyYD0U5v3B3CWv80i-1mUGpBpkNKB98",
@@ -747,51 +746,46 @@ const cfg = {
 const apps = getApps();
 const app  = apps.length ? apps[0] : initializeApp(cfg);
 const db   = getFirestore(app);
-const auth = getAuth(app);
 window._sdb = db;
 window._sfb = { doc, getDocs, setDoc, getDoc, collection };
 window._fbCfg = cfg;
 
-// ─── حماية الصفحة: أدمن فقط ───
-onAuthStateChanged(auth, async (user) => {
-  if (!user) {
-    // غير مسجل — أعد التوجيه
-    window.location.href = 'dashboard.html';
-    return;
-  }
-  try {
-    // تحقق من نوع المستخدم في Firestore
-    const uSnap = await getDocs(query(collection(db, 'users'), where('uid', '==', user.uid)));
-    let userType = null;
-    if (!uSnap.empty) userType = uSnap.docs[0].data().type;
+// ─── حماية الصفحة: أدمن فقط ───────────────────────────
+// الخطوة 1: فحص الجلسة من localStorage (نفس نظام الداشبورد)
+const _saved = localStorage.getItem('bjUser');
+let _session = null;
+try { _session = _saved ? JSON.parse(_saved) : null; } catch(e) {}
 
-    if (userType !== 'admin') {
-      // ليس أدمن — أعد التوجيه
-      window.location.href = 'dashboard.html';
-      return;
-    }
+const SESSION_12H = 12 * 60 * 60 * 1000;
+const _expired = _session?.loginTime && (Date.now() - _session.loginTime) > SESSION_12H;
+
+if (!_session || _session.type !== 'admin' || _expired) {
+  if (_expired) localStorage.removeItem('bjUser');
+  window.location.href = 'dashboard.html';
+} else {
+  // الخطوة 2: تحقق من Firestore للتأكد أن الحساب لا يزال أدمن (لم يُغيَّر دوره)
+  try {
+    const uSnap = await getDocs(query(collection(db, 'users'), where('username', '==', _session.username)));
+    const liveType = uSnap.empty ? null : uSnap.docs[0].data().type;
+    if (liveType !== 'admin') { window.location.href = 'dashboard.html'; }
+    else { _showPage(); }
   } catch(e) {
-    console.warn('auth check error:', e);
-    window.location.href = 'dashboard.html';
-    return;
+    // إذا فشل الاتصال — اقبل الجلسة المحلية كاحتياط
+    _showPage();
   }
+}
 
-  // ✅ مصرح له — أظهر الصفحة
+function _showPage() {
   document.getElementById('authGate').style.display = 'none';
-  document.getElementById('mainWrap').style.display = 'block';
-
+  document.getElementById('mainWrap').style.display  = 'block';
   // تحميل الإعدادات
-  try {
-    const snap = await getDocs(collection(db, 'settings'));
+  getDocs(collection(db, 'settings')).then(snap => {
     const s = {};
     snap.forEach(d => { s[d.data().key] = d.data().value; });
     window._loadedSettings = s;
     document.dispatchEvent(new Event('settingsLoaded'));
-  } catch(e) {
-    console.warn('تعذّر تحميل الإعدادات:', e);
-    document.dispatchEvent(new Event('settingsLoaded'));
-  }
-});
+  }).catch(() => document.dispatchEvent(new Event('settingsLoaded')));
+}
 </script>
 
 <script>
@@ -1055,10 +1049,10 @@ async function saveSection(sec) {
         { key:'notif_wa_enabled',    value: chkVal('waEnabled') },
         { key:'notif_wa_number',     value: v('notifWa') },
         { key:'notif_tele_enabled',  value: chkVal('teleEnabled') },
-        { key:'telegram_token',      value: v('teleToken') },
-        { key:'telegram_chat',       value: v('teleChat') },
-        { key:'preparer_telegram',   value: v('telePrepChat') },
-        { key:'driver_telegram',     value: v('teleDriverChat') },
+        { key:'telegram_token',      value: v('teleToken'),      protected: true },
+        { key:'telegram_chat',       value: v('teleChat'),       protected: true },
+        { key:'preparer_telegram',   value: v('telePrepChat'),   protected: true },
+        { key:'driver_telegram',     value: v('teleDriverChat'), protected: true },
         { key:'notif_email_enabled', value: chkVal('emailEnabled') },
         { key:'emailjs_service_id',  value: v('ejService'),  protected: true },
         { key:'emailjs_template_id', value: v('ejTemplate'), protected: true },
